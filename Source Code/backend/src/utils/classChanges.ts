@@ -1,1 +1,0 @@
-export const meaningfulClassChanges = (before: Record<string, unknown>, after: Record<string, unknown>) => ['title','description','startsAt','durationMinutes','address','delivery','status','capacity','tutor'].flatMap(field => JSON.stringify(before[field]) === JSON.stringify(after[field]) ? [] : [{ field, previous: before[field], current: after[field] }]);
