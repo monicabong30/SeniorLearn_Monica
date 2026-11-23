@@ -1,0 +1,2 @@
+import { describe, expect, it } from 'vitest'; import { meaningfulClassChanges } from './classChanges.js';
+describe('class change tracking',()=>{it('records meaningful old and new values only',()=>expect(meaningfulClassChanges({title:'A',status:'SCHEDULED'},{title:'B',status:'SCHEDULED'})).toEqual([{field:'title',previous:'A',current:'B'}]));it('does not record a no-op',()=>expect(meaningfulClassChanges({capacity:12},{capacity:12})).toEqual([]));});

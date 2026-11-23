@@ -1,0 +1,5 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+const vitest_1 = require("vitest");
+const recurrence_js_1 = require("./recurrence.js");
+(0, vitest_1.describe)('recurrence generation', () => { (0, vitest_1.it)('generates weekly occurrences', () => (0, vitest_1.expect)((0, recurrence_js_1.generateOccurrences)(new Date('2027-01-04'), new Date('2027-01-18'), 'WEEKLY')).toHaveLength(3)); (0, vitest_1.it)('generates biweekly occurrences', () => (0, vitest_1.expect)((0, recurrence_js_1.generateOccurrences)(new Date('2027-01-04'), new Date('2027-02-01'), 'BIWEEKLY')).toHaveLength(3)); (0, vitest_1.it)('generates custom weekdays', () => (0, vitest_1.expect)((0, recurrence_js_1.generateOccurrences)(new Date('2027-01-04'), new Date('2027-01-10'), 'CUSTOM', [1, 3]).map(x => x.getDay())).toEqual([1, 3])); (0, vitest_1.it)('rejects invalid ranges', () => (0, vitest_1.expect)(() => (0, recurrence_js_1.generateOccurrences)(new Date('2027-02-01'), new Date('2027-01-01'), 'WEEKLY')).toThrow()); });
