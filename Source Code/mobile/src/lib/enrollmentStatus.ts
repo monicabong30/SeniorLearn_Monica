@@ -1,0 +1,3 @@
+export type EnrollmentState='ENROLLED'|'FULL'|'CANCELLED'|'COMPLETE'|'DRAFT'|'STARTED'|'AVAILABLE';
+export function enrollmentState(item:any,enrollments:any[]):EnrollmentState{if(enrollments.some(x=>x.class?._id===item._id&&x.status==='ACTIVE'))return'ENROLLED';if(item.status==='CLOSED')return'FULL';if(item.status==='CANCELLED')return'CANCELLED';if(item.status==='COMPLETE')return'COMPLETE';if(item.status==='DRAFT')return'DRAFT';if(new Date(item.startsAt)<=new Date())return'STARTED';return'AVAILABLE'}
+export const enrollmentLabel=(state:EnrollmentState)=>({ENROLLED:'✓ Already Enrolled',FULL:'Class Full',CANCELLED:'Class Cancelled',COMPLETE:'Class Completed',DRAFT:'Not Yet Available',STARTED:'Class Started',AVAILABLE:'Enroll Now'}[state]);

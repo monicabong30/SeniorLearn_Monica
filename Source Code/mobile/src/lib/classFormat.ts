@@ -1,0 +1,1 @@
+export function classSchedule(value:string){const d=new Date(value),date=new Intl.DateTimeFormat('en-AU',{weekday:'long',day:'numeric',month:'long',year:'numeric'}).format(d);return d.getHours()||d.getMinutes()?`${date} at ${new Intl.DateTimeFormat('en-AU',{hour:'numeric',minute:'2-digit'}).format(d)}`:date}

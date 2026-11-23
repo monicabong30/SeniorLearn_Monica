@@ -1,0 +1,22 @@
+{
+  "name": "seniorlearn",
+  "private": true,
+  "workspaces": [
+    "backend",
+    "mobile"
+  ],
+  "overrides": {
+    "react": "19.3.0",
+    "react-dom": "19.3.0"
+  },
+  "scripts": {
+    "backend": "npm run dev --workspace=backend",
+    "mobile": "npm start --workspace=mobile",
+    "test": "npm test --workspace=backend",
+    "build": "npm run build --workspace=backend"
+  },
+  "devDependencies": {
+    "react": "19.3.0",
+    "react-dom": "19.3.0"
+  }
+}

@@ -1,0 +1,5 @@
+/** Assessment-focused domain utilities used by the scheduling module. */
+export class LinkedQueue<T> { private head?: { value:T; next?:any }; private tail?: { value:T; next?:any }; enqueue(value:T){const n={value};if(this.tail)this.tail.next=n;else this.head=n;this.tail=n;} dequeue(){if(!this.head)return undefined;const value=this.head.value;this.head=this.head.next;if(!this.head)this.tail=undefined;return value;} get isEmpty(){return !this.head;} }
+/** A two-dimensional availability grid: weekday × 30-minute slot. */
+export function availabilityGrid(sessions:{startsAt:Date;durationMinutes:number}[]){const grid=Array.from({length:7},()=>Array(48).fill(false));for(const s of sessions){const day=s.startsAt.getDay(),start=s.startsAt.getHours()*2+Math.floor(s.startsAt.getMinutes()/30);for(let slot=start;slot<Math.min(48,start+Math.ceil(s.durationMinutes/30));slot++)grid[day][slot]=true;}return grid;}
+export function sortByNextSession<T extends {startsAt:Date}>(items:T[]){return [...items].sort((a,b)=>a.startsAt.getTime()-b.startsAt.getTime());}

@@ -1,0 +1,4 @@
+import { describe, expect, it } from 'vitest';
+import { filterAndSortClasses } from './classFilters';
+const rows=[{_id:'1',title:'Art',status:'SCHEDULED',delivery:'ONLINE',startsAt:'2030-02-01'},{_id:'2',title:'Computers',status:'SCHEDULED',delivery:'IN_PERSON',startsAt:'2030-01-01'},{_id:'3',title:'Books',status:'CANCELLED',delivery:'ONLINE',startsAt:'2020-01-01'}];
+describe('class filters',()=>{it('composes availability and sort selection',()=>expect(filterAndSortClasses(rows,[{class:{_id:'1'},status:'ACTIVE'}],[],'Available','Title',new Date('2029-01-01')).map(x=>x._id)).toEqual(['2']));it('filters favourites and sorts latest first',()=>expect(filterAndSortClasses(rows,[],[{class:{_id:'1'}}],'Favourites','Latest',new Date('2029-01-01')).map(x=>x._id)).toEqual(['1']));it('returns the default filter results after clearing filters',()=>expect(filterAndSortClasses(rows,[],[],'All','Earliest',new Date('2029-01-01')).map(x=>x._id)).toEqual(['3','2','1']));});
