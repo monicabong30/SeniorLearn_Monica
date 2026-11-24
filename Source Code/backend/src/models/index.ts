@@ -36,7 +36,10 @@ const enrollmentSchema = new Schema({ user: { type: Schema.Types.ObjectId, ref: 
 enrollmentSchema.index({ user: 1, class: 1 }, { unique: true, partialFilterExpression: { status: 'ACTIVE' }, name: 'active_enrollment_per_user_class' });
 enrollmentSchema.index({ class: 1, status: 1 });
 export const Enrollment = model('Enrollment', enrollmentSchema);
-export const Payment = model('Payment', new Schema({ user: { type: Schema.Types.ObjectId, ref: 'User', required: true }, amountCents: Number, kind: { type: String, enum: ['REGISTRATION','RENEWAL'], required: true }, status: { type: String, enum: ['SIMULATED_PAID','FAILED'], required: true }, reference: String }, { timestamps: true }));
+const paymentSchema = new Schema({ user: { type: Schema.Types.ObjectId, ref: 'User', required: true }, amountCents: Number, kind: { type: String, enum: ['REGISTRATION','RENEWAL'], required: true }, status: { type: String, enum: ['SIMULATED_PAID','FAILED'], required: true }, reference: String, renewalPeriod: String }, { timestamps: true });
+// One payment is allowed for each annual renewal period.
+paymentSchema.index({ user: 1, kind: 1, renewalPeriod: 1 }, { unique: true, partialFilterExpression: { kind: 'RENEWAL', renewalPeriod: { $type: 'string' } }, name: 'one_renewal_payment_per_period' });
+export const Payment = model('Payment', paymentSchema);
 export const Bulletin = model('Bulletin', new Schema({ title: { type: String, required: true }, body: { type: String, required: true }, status: { type: String, enum: ['DRAFT','PUBLISHED'], default: 'DRAFT' }, author: { type: Schema.Types.ObjectId, ref: 'User', required: true }, publishedAt: Date }, { timestamps: true }));
 const bulletinReadSchema = new Schema({ user: { type: Schema.Types.ObjectId, ref: 'User', required: true }, bulletin: { type: Schema.Types.ObjectId, ref: 'Bulletin', required: true }, readAt: { type: Date, required: true } }, { timestamps: true });
 bulletinReadSchema.index({ user: 1, bulletin: 1 }, { unique: true });
