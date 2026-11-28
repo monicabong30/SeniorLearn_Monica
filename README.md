@@ -8,21 +8,33 @@
 
 ## About the Project
 
-SeniorLearn Australia is a mobile application developed to help older adults access learning activities and manage their memberships more easily.
+SeniorLearn Australia is a mobile application designed to help older adults access learning activities, manage their memberships and stay informed about community activities.
 
-The application allows members to browse available classes, enrol in activities, view announcements and manage their membership information. Tutors can organise their own classes, while administrators can manage members, classes and enrolments.
+The application allows members to browse and enrol in classes, manage their membership and receive announcements. Tutors can organise and manage their classes, while administrators can oversee members, classes, enrolments and bulletins.
 
-The aim of this project is to provide a simple and user-friendly learning platform that makes these tasks more convenient.
+The application features a clean, accessible and user-friendly interface designed to simplify the learning experience.
 
 ## Main Features
 
-- **Member Registration and Login** — Users can register, log in and manage their account information.
-- **Class Management** — Members can browse classes, view class details and enrol in available activities.
-- **Tutor Functions** — Tutors can create, update, cancel and schedule recurring classes.
-- **Membership Management** — Members can check their membership status and renew when required.
-- **Bulletins and Notifications** — Members can receive announcements and updates about their classes.
-- **Admin Dashboard** — Administrators can manage members, classes, enrolments and bulletins.
-- **Role-Based Access** — Different functions are available depending on the user's membership type and permissions.
+- **Registration and Authentication** — Account registration, secure login, password management and personal information management.
+- **Class Enrolment** — Browse available classes, view class details, enrol in activities and manage enrolments.
+- **Membership Management** — View membership status, expiry dates and renewal options.
+- **Membership Payments** — Membership activation and renewal through Stripe Checkout in Test Mode.
+- **Tutor Functions** — Create, update, cancel and schedule recurring classes, and manage class participants.
+- **Bulletins and Notifications** — Receive announcements, class updates and membership reminders.
+- **Admin Dashboard** — View membership and class statistics, and manage members, classes, enrolments and bulletins.
+- **Role-Based Access Control** — Access application features according to user roles, membership status and permissions.
+- **Responsive Interface** — Consistent navigation and layouts designed for a straightforward mobile experience.
+
+## Membership Types
+
+| Membership | Description |
+|---|---|
+| Standard | Annual membership with paid renewal. |
+| Professional | Eligible for free renewal after completing at least six classes within the previous 12 months. Paid renewal is available if the requirements are not met, with the membership reverting to Standard. |
+| Honorary | Lifetime membership without renewal requirements. |
+
+An active membership is required to access membership-restricted learning features.
 
 ## Technologies Used
 
@@ -34,22 +46,35 @@ The aim of this project is to provide a simple and user-friendly learning platfo
 | Database | MongoDB Atlas |
 | Database Modelling | Mongoose |
 | API | REST API |
-| Authentication | JWT |
+| Authentication | JSON Web Token (JWT) |
+| Secure Token Storage | Expo SecureStore |
+| Payment Integration | Stripe Checkout, Stripe Webhooks |
 | API Documentation | Swagger / OpenAPI |
 | Android Build | Expo EAS Build |
-| Testing | Android Studio Emulator, Vitest |
+| Testing | Vitest, Expo Go, Android Application Testing |
+| Version Control | Git, GitHub |
 
-## Project Files
+## Repository Structure
 
-The repository is organised into two main folders:
+```text
+SeniorLearn_Monica/
+├── Assessment Documents/
+├── Evidence/
+├── Source Code/
+│   ├── backend/
+│   ├── mobile/
+│   ├── .gitignore
+│   ├── README.md
+│   ├── package.json
+│   └── package-lock.json
+└── README.md
+```
 
-**Source Code**
-
-Contains the mobile application, backend API, database models and configuration files used to develop SeniorLearn.
-
-**Assessment Documents**
-
-Contains the project documentation, planning report and supporting assessment materials.
+| Directory | Description |
+|---|---|
+| [Assessment Documents](./Assessment%20Documents) | Project documentation, planning report and assessment materials. |
+| [Evidence](./Evidence) | Supporting development, testing and deployment evidence. |
+| [Source Code](./Source%20Code) | Mobile application, backend API, database models, tests and configuration files. |
 
 ## Download the Android Application
 
@@ -57,40 +82,76 @@ The Android APK is available from the GitHub Releases page.
 
 [Download SeniorLearn Android APK](https://github.com/monicabong30/SeniorLearn_Monica/releases/latest)
 
-Download the APK from the **Assets** section and install it on a compatible Android device or emulator.
+Download the APK from the **Assets** section and install it on a compatible Android device.
+
+The application requires a running and accessible backend server to use its online features.
 
 ## Running the Project
 
-The backend and mobile application are maintained in the Source Code folder.
+The mobile application and backend are maintained in the `Source Code` directory.
 
-To run the backend locally:
+### Prerequisites
 
-1. Install Node.js and the project dependencies.
-2. Configure the required environment variables, including the MongoDB connection string and JWT secret.
-3. Start the Express backend.
-4. Ensure the mobile application is configured to use the correct backend API address.
+- Node.js and npm
+- MongoDB Atlas account
+- Stripe Test Mode account
+- Expo Go or a compatible Android device
 
-The application requires an active backend connection to access online features such as login, class enrolment and membership management.
+### Setup Overview
+
+1. Clone or download the repository.
+2. Install the project dependencies.
+3. Configure the backend and mobile environment variables using the provided example files.
+4. Configure MongoDB Atlas and Stripe Test Mode.
+5. Start the backend server.
+6. Configure the mobile application to connect to the backend API.
+7. Start the mobile application using Expo Go or build the Android APK.
+
+For detailed installation instructions, environment configuration, testing commands and build instructions, refer to the [Source Code README](./Source%20Code/README.md).
 
 ## Testing
 
-The application was tested using automated tests and the Android Studio Emulator.
+The project includes automated testing, TypeScript validation and application testing.
 
-The development process included backend unit tests, mobile component tests, API integration tests and Android application testing.
+Testing covers key functionality, including:
 
-Testing focused on login, class management, enrolment, membership renewal and administrative functions.
+- User registration and authentication
+- Membership management and renewal
+- Class scheduling and enrolment
+- Role-based access control
+- Administrative functions
+- API and database integration
+- Mobile application components
+
+### Latest Source Code Verification
+
+| Check | Result |
+|---|---|
+| Backend Build | Passed |
+| Backend Automated Tests | 24/24 Passed |
+| Mobile TypeScript Check | Passed |
+
+Supporting testing and development evidence is available in the [Evidence](./Evidence) directory.
+
+## Security
+
+The application includes security measures such as JWT authentication, secure token storage, role-based access control, input validation and Stripe webhook signature verification.
+
+Sensitive credentials and actual environment configuration files are excluded from the repository. Environment example files are provided for local setup.
 
 ## Known Limitations
 
-This version was developed for educational assessment and demonstration purposes.
+This application was developed for educational assessment and demonstration purposes.
 
-- Membership payments are simulated. No real financial transactions are processed.
-- The backend currently runs locally rather than on a permanently hosted server.
-- The tested application uses HTTP for local API communication. HTTPS is not yet implemented.
-- Online functions require the configured backend server to be running and reachable.
+- Membership payments use Stripe Test Mode. No real financial transactions are processed.
+- The backend runs locally rather than on a permanently hosted server.
+- Local API communication uses HTTP over a trusted local network.
+- The mobile device must be able to access the configured backend server.
+- Internet access is required for MongoDB Atlas and Stripe services.
+- The downloadable APK reflects the version published in GitHub Releases and may require rebuilding when the source code or backend configuration changes.
 
 ## Project Purpose
 
 This project was developed as part of the **ICT50220 Diploma of Advanced Programming** assessment.
 
-It demonstrates mobile application development, REST API implementation, database integration, user authentication, testing and Android application deployment.
+It demonstrates mobile application development, REST API implementation, database integration, authentication, membership management, payment integration, software testing, version control and Android application deployment.
