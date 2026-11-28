@@ -7,12 +7,17 @@ import { api } from "../../src/lib/api";
 import { AppButton, Card, Field, PageTitle } from "../../src/components/ui";
 import { DatePickerField } from "../../src/components/DatePickerField";
 import { TimePickerField } from "../../src/components/TimePickerField";
+import { NumberInputField } from "../../src/components/NumberInputField";
+import { ConfirmationDialog } from "../../src/components/ConfirmationDialog";
 import { KeyboardAwareScrollView } from "../../src/components/KeyboardAwareScrollView";
 import { colors, space } from "../../src/theme/tokens";
 import { useFormSubmitState } from "../../src/hooks/useFormSubmitState";
+import { useUnsavedChangesGuard } from "../../src/hooks/useUnsavedChangesGuard";
+import { localDateOnly } from "../../src/lib/registration";
 import {
   durationBetween,
   durationLabel,
+  MINIMUM_CLASS_CAPACITY,
   validateClassForm,
 } from "../../src/lib/scheduling";
 export default function CreateClass() {
@@ -40,6 +45,7 @@ export default function CreateClass() {
   };
   const validate=useCallback((values:typeof f)=>validateClassForm(values),[]);
   const form=useFormSubmitState({initialValues:f,values:f,validate,isSubmitting:pending,mode:"create"});
+  const navigationGuard=useUnsavedChangesGuard(form.isDirty,pending);
   const save = async () => {
     const validation = form.errors;
     if (Object.keys(validation).length) {
@@ -57,8 +63,7 @@ export default function CreateClass() {
         delivery: "ONLINE",
         status: "DRAFT",
       });
-      show("SUCCESS", "Class created successfully.");
-      router.replace("/(tabs)/tutor");
+      show("SUCCESS", "Class created successfully.", () => router.replace("/(tabs)/tutor"));
     } catch {
       show("ERROR", "Unable to save class changes.");
     } finally {
@@ -75,12 +80,14 @@ export default function CreateClass() {
       <Card>
         <Field
           label="Class title"
+          placeholder="e.g. Introduction to Digital Photography"
           value={f.title}
           error={errors.title}
           onChangeText={(v) => set("title", v)}
         />
         <Field
           label="Description"
+          placeholder="e.g. Learn basic photography skills"
           value={f.description}
           error={errors.description}
           onChangeText={(v) => set("description", v)}
@@ -88,24 +95,29 @@ export default function CreateClass() {
         />
         <DatePickerField
           label="Class date"
+          placeholder="DD/MM/YYYY"
+          minimumDate={localDateOnly()}
           value={f.date}
           error={errors.date}
           onChange={(v) => set("date", v)}
         />
-        <View style={s.times}><View style={s.timeField}><TimePickerField label="Start time" value={f.startTime} error={errors.startTime} onChange={(v) => set("startTime", v)} /></View><View style={s.timeField}><TimePickerField label="End time" value={f.endTime} error={errors.endTime || (duration <= 0 ? "End time must be later than start time." : undefined)} onChange={(v) => set("endTime", v)} /></View></View>
+        <View style={s.times}><View style={s.timeField}><TimePickerField label="Start time" placeholder="Select start time" value={f.startTime} error={errors.startTime} onChange={(v) => set("startTime", v)} /></View><View style={s.timeField}><TimePickerField label="End time" placeholder="Select end time" value={f.endTime} error={errors.endTime || (duration <= 0 ? "End time must be later than start time." : undefined)} onChange={(v) => set("endTime", v)} /></View></View>
         <Text style={s.duration}>
           Duration —{" "}
           {duration > 0 ? durationLabel(duration) : "Select a valid time range"}
         </Text>
-        <Field
+        <NumberInputField
           label="Capacity"
+          placeholder="e.g. 20"
+          minimum={MINIMUM_CLASS_CAPACITY}
+          required
           error={errors.capacity}
-          keyboardType="number-pad"
           value={f.capacity}
           onChangeText={(v) => set("capacity", v)}
         />
         <Field
           label="Microsoft Teams link"
+          placeholder="https://teams.microsoft.com/..."
           error={errors.teamsLink}
           value={f.teamsLink}
           onChangeText={(v) => set("teamsLink", v)}
@@ -115,6 +127,8 @@ export default function CreateClass() {
         Date and time are saved in your device's local time.
       </Text>
       <AppButton label="Save draft" loading={pending} disabled={!form.canSubmit} onPress={save} />
+      <AppButton label="Cancel" variant="outline" disabled={pending} onPress={() => router.back()} />
+      <ConfirmationDialog visible={navigationGuard.discardConfirmationVisible} title="Discard changes?" message="Your unsaved changes will be lost." confirmLabel="Discard changes" cancelLabel="Keep editing" variant="destructive" onDismiss={navigationGuard.keepEditing} onConfirm={navigationGuard.discard} />
     </KeyboardAwareScrollView>
   );
 }

@@ -2,22 +2,13 @@ import type { ExpoConfig } from 'expo/config';
 
 const apiUrl = process.env.EXPO_PUBLIC_API_URL;
 
-function isPrivateOrLocalHost(hostname: string): boolean {
-  const host = hostname.toLowerCase();
-  if (host === 'localhost' || host === '::1' || host.endsWith('.local') || /^127\./.test(host)) return true;
-  const ipv4 = host.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
-  if (!ipv4) return false;
-  const [first, second] = ipv4.slice(1).map(Number);
-  return first === 10 || first === 127 || (first === 192 && second === 168) || (first === 172 && second >= 16 && second <= 31);
-}
-
 function parsedApiUrl(value: string | undefined): URL | undefined {
   try { return value ? new URL(value) : undefined; } catch { return undefined; }
 }
 
 const parsedUrl = parsedApiUrl(apiUrl);
-if (!parsedUrl || parsedUrl.protocol !== 'http:' || !isPrivateOrLocalHost(parsedUrl.hostname)) {
-  throw new Error('EXPO_PUBLIC_API_URL must be an HTTP local or private-network API URL for the SeniorLearn APK.');
+if (!parsedUrl || parsedUrl.protocol !== 'https:') {
+  throw new Error('EXPO_PUBLIC_API_URL must be a valid HTTPS URL for the SeniorLearn assessment APK.');
 }
 
 const config: ExpoConfig = {

@@ -55,7 +55,7 @@ const membership = (u: User) =>
   (memberships[u.id] ??= {
     status: "ACTIVE",
     startsAt: "2026-01-01",
-    expiresAt: "2027-01-01",
+    expiresAt: "2030-01-01",
     annualFeeCents: 5000,
   });
 const notify = (user: string, title: string, body: string, type: string) =>
@@ -493,6 +493,11 @@ export const mockApi = {
       if (deny) return deny;
       const c = classes.find((x) => x._id === path.split("/")[2]);
       if (!c) return fail(404, "Class not found");
+      const currentMembership = membership(current!);
+      const lifetime = canAdmin(current) || hasRole(current, "HONORARY" as any);
+      const expiry = currentMembership.expiresAt ? new Date(currentMembership.expiresAt) : undefined;
+      if (!lifetime && (!expiry || currentMembership.status !== "ACTIVE" || new Date(c.startsAt) > new Date(expiry.getFullYear(), expiry.getMonth(), expiry.getDate(), 23, 59, 59, 999)))
+        return fail(403, `Membership renewal required. Your membership expires on ${expiry ? expiry.toLocaleDateString("en-AU") : "the scheduled date"}. This class takes place after your membership expires.`);
       if (c.status === "CLOSED") return fail(409, "Class is full");
       if (c.status !== "SCHEDULED")
         return fail(409, "Class is not open for enrolment");

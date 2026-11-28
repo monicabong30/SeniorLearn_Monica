@@ -2,7 +2,6 @@ import { ScaledText as Text } from "../../src/components/ScaledText";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useState } from "react";
 import {
-  ActivityIndicator,
   Alert,
   ScrollView,
   StyleSheet,
@@ -16,6 +15,7 @@ import {
 } from "../../src/components/ui";
 import { colors, space, type } from "../../src/theme/tokens";
 import { rolesOf } from '../../src/lib/permissions';
+import { LoadingIndicator } from "../../src/components/LoadingIndicator";
 export default function Member() {
   const { id } = useLocalSearchParams<{ id: string }>(),
     [data, setData] = useState<any>(),
@@ -37,9 +37,7 @@ export default function Member() {
     );
   if (!data)
     return (
-      <View style={s.state}>
-        <ActivityIndicator color={colors.primary} />
-      </View>
+      <LoadingIndicator variant="fill" accessibilityLabel="Loading member details" />
     );
   const { user, membership } = data;
   return (
@@ -54,10 +52,15 @@ export default function Member() {
       </View>
       <Card>
         <Text>Phone: {user.phone || "Not available"}</Text>
-        {rolesOf(user).map(role=><StatusBadge key={role} status={role} />)}
-        {user.isAdmin&&<StatusBadge status="ADMIN" />}
-        <Text>Membership roles: {rolesOf(user).join(', ')}</Text>
-        <Text>Membership status: {membership?.status || "Not available"}</Text>
+        <View style={s.membershipRow}>
+          <Text>Membership roles:</Text>
+          {rolesOf(user).map((role) => <StatusBadge key={role} status={role} />)}
+          {user.isAdmin ? <StatusBadge status="ADMIN" /> : null}
+        </View>
+        <View style={s.membershipRow}>
+          <Text>Membership status:</Text>
+          <StatusBadge status={membership?.status || "Not available"} />
+        </View>
         <Text>
           Expiry:{" "}
           {membership?.expiresAt
@@ -90,4 +93,5 @@ const s = StyleSheet.create({
   memberName: { ...type.page, color: colors.text, fontWeight: "700" },
   memberEmail: { ...type.body, color: colors.textSecondary },
   payment: { gap: space.xs, paddingVertical: space.sm, borderBottomWidth: 1, borderBottomColor: colors.border },
+  membershipRow: { flexDirection: "row", alignItems: "center", flexWrap: "wrap", gap: space.xs },
 });

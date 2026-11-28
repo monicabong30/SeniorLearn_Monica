@@ -77,7 +77,7 @@ export default function Help() {
       <PageTitle title="Help & Support" subtitle="How can we help you?" />
       <TextInput
         accessibilityLabel="Search help"
-        placeholder="Search help topics"
+        placeholder="Search help topics..."
         value={q}
         onChangeText={setQ}
         placeholderTextColor={colors.textSecondary}

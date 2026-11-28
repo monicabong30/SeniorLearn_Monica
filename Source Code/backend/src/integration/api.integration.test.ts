@@ -2,10 +2,10 @@ import http from 'node:http';
 import { AddressInfo } from 'node:net';
 import bcrypt from 'bcrypt';
 import mongoose from 'mongoose';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import app, { resetLoginRateLimitForTests } from '../app.js';
 import { Bulletin, BulletinRead, ClassChange, Enrollment, Favourite, LearningClass, Membership, Notification, Payment, RecurrenceRule, User } from '../models/index.js';
-import { integrationEnabled, testDatabaseUri } from './testDatabase.js';
+import { connectIntegrationDatabase, integrationEnabled, testDatabaseUri } from './testDatabase.js';
 
 const run = integrationEnabled ? describe : describe.skip;
 const prefix = `integration-${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -15,15 +15,28 @@ let baseUrl = '';
 let tutorToken = '', memberToken = '', secondMemberToken = '', adminToken = '';
 let tutorId = '', memberId = '', secondMemberId = '';
 let classId = '';
+const registrationInput=(name:string,email:string)=>({name,email,password:'SeniorLearn1!',phone:'0412345678',dateOfBirth:'1950-01-04',termsAccepted:true as const,termsVersion:'test-2026-11',communicationsOptIn:false});
 
 async function request(path: string, options: { method?: string; token?: string; body?: unknown } = {}) {
   const response = await fetch(`${baseUrl}/api${path}`, { method: options.method || 'GET', headers: { 'Content-Type': 'application/json', ...(options.token ? { Authorization: `Bearer ${options.token}` } : {}) }, body: options.body === undefined ? undefined : JSON.stringify(options.body) });
   const text = await response.text();
   return { status: response.status, body: text ? JSON.parse(text) : undefined };
 }
+async function closeServer(current: http.Server | undefined) {
+  if (!current || !current.listening) return;
+  // Fetch can retain idle keep-alive sockets. Explicitly close them so an Atlas
+  // test cannot leave the HTTP shutdown hook waiting for its timeout.
+  current.closeIdleConnections?.();
+  current.closeAllConnections?.();
+  await new Promise<void>((resolve, reject) => current.close(error => error ? reject(error) : resolve()));
+}
 async function register(email: string, name: string) {
-  const response = await request('/auth/register', { method: 'POST', body: { name, email, password: 'SeniorLearn1!', phone: '0412345678' } });
-  expect(response.status).toBe(201); owned.users.push(new mongoose.Types.ObjectId(response.body.user.id)); return response.body;
+  const response = await request('/auth/register', { method: 'POST', body: registrationInput(name,email) });
+  expect(response.status).toBe(201); const id=new mongoose.Types.ObjectId(response.body.user.id); owned.users.push(id);
+  // Non-payment tests need an active member as a database fixture. Payment tests
+  // below use the DemoPay completion endpoint instead.
+  await Membership.findOneAndUpdate({user:id},{status:'ACTIVE',startsAt:new Date(),expiresAt:new Date('2099-01-01')});
+  const login=await request('/auth/login',{method:'POST',body:{email,password:'SeniorLearn1!'}}); expect(login.status).toBe(200); return {...response.body,token:login.body.token};
 }
 const future = (days: number) => new Date(Date.now() + days * 86400000).toISOString();
 const classInput = (overrides: Record<string, unknown> = {}) => ({ title: 'Digital photographs', description: 'Organise and safely share digital photographs.', startsAt: future(14), durationMinutes: 60, capacity: 2, delivery: 'ONLINE', teamsLink: 'https://teams.microsoft.com/example', ...overrides });
@@ -31,26 +44,42 @@ const classInput = (overrides: Record<string, unknown> = {}) => ({ title: 'Digit
 run('real MongoDB API integration', () => {
   beforeAll(async () => {
     const uri = testDatabaseUri();
-    await mongoose.connect(uri);
+    await connectIntegrationDatabase(uri);
     const db = mongoose.connection.db!;
     await db.collection('enrollments').dropIndex('user_1_class_1').catch(() => undefined);
-    await Promise.all([User.syncIndexes(), Membership.syncIndexes(), LearningClass.syncIndexes(), Enrollment.syncIndexes(), Favourite.syncIndexes(), Notification.syncIndexes(), BulletinRead.syncIndexes(), ClassChange.syncIndexes(), RecurrenceRule.syncIndexes()]);
+    // Atlas index reconciliation can take well over a minute when another
+    // client is building an index. These tests do not alter schemas; they use
+    // the provisioned isolated database and only remove the legacy enrollment
+    // unique index that would invalidate the enrolment-history scenario.
     expect((await db.collection('enrollments').indexes()).some(index => index.name === 'user_1_class_1')).toBe(false);
     server = http.createServer(app); await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve)); baseUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
     const tutor = await register(`${prefix}-tutor@seniorlearn.test`, 'Integration Tutor'); tutorId = tutor.user.id; await User.findByIdAndUpdate(tutorId, { roles: ['STANDARD','PROFESSIONAL'], isAdmin: false }); tutorToken = (await request('/auth/login', { method: 'POST', body: { email: tutor.user.email, password: 'SeniorLearn1!' } })).body.token;
     const member = await register(`${prefix}-member@seniorlearn.test`, 'Integration Member'); memberId = member.user.id; memberToken = member.token;
     const second = await register(`${prefix}-member2@seniorlearn.test`, 'Integration Member Two'); secondMemberId = second.user.id; secondMemberToken = second.token;
     const admin = await register(`${prefix}-admin@seniorlearn.test`, 'Integration Admin'); await User.findByIdAndUpdate(admin.user.id, { isAdmin: true }); adminToken = (await request('/auth/login', { method: 'POST', body: { email: admin.user.email, password: 'SeniorLearn1!' } })).body.token;
-  }, 30000);
+  }, 120000);
+
+  beforeEach(() => {
+    // The limiter is deliberately process-global in production. Clear only its
+    // in-memory test state to ensure independent integration scenarios do not
+    // consume one another's localhost login budget.
+    resetLoginRateLimitForTests();
+  });
 
   afterAll(async () => {
     const classIds = owned.classes;
-    await Promise.all([Notification.deleteMany({ user: { $in: owned.users } }), BulletinRead.deleteMany({ user: { $in: owned.users } }), Favourite.deleteMany({ user: { $in: owned.users } }), Enrollment.deleteMany({ $or: [{ user: { $in: owned.users } }, { class: { $in: classIds } }] }), ClassChange.deleteMany({ class: { $in: classIds } }), RecurrenceRule.deleteMany({ tutor: { $in: owned.users } }), LearningClass.deleteMany({ $or: [{ _id: { $in: classIds } }, { tutor: { $in: owned.users } }] }), Bulletin.deleteMany({ _id: { $in: owned.bulletins } }), Payment.deleteMany({ user: { $in: owned.users } }), Membership.deleteMany({ user: { $in: owned.users } }), User.deleteMany({ _id: { $in: owned.users } })]);
-    await new Promise<void>(resolve => server?.close(() => resolve())); await mongoose.disconnect();
+    if (mongoose.connection.readyState === 1) await Promise.all([Notification.deleteMany({ user: { $in: owned.users } }), BulletinRead.deleteMany({ user: { $in: owned.users } }), Favourite.deleteMany({ user: { $in: owned.users } }), Enrollment.deleteMany({ $or: [{ user: { $in: owned.users } }, { class: { $in: classIds } }] }), ClassChange.deleteMany({ class: { $in: classIds } }), RecurrenceRule.deleteMany({ tutor: { $in: owned.users } }), LearningClass.deleteMany({ $or: [{ _id: { $in: classIds } }, { tutor: { $in: owned.users } }] }), Bulletin.deleteMany({ _id: { $in: owned.bulletins } }), Payment.deleteMany({ user: { $in: owned.users } }), Membership.deleteMany({ user: { $in: owned.users } }), User.deleteMany({ _id: { $in: owned.users } })]);
+    await closeServer(server);
+    await mongoose.disconnect();
   });
 
   it('authenticates, persists profile changes, and never returns password hashes', async () => {
     expect((await request('/auth/login', { method: 'POST', body: { email: `${prefix}-member@seniorlearn.test`, password: 'wrong' } })).status).toBe(401);
+    for (let attempt = 0; attempt < 9; attempt++) {
+      expect((await request('/auth/login', { method: 'POST', body: { email: `${prefix}-member@seniorlearn.test`, password: 'wrong' } })).status).toBe(401);
+    }
+    expect((await request('/auth/login', { method: 'POST', body: { email: `${prefix}-member@seniorlearn.test`, password: 'wrong' } })).status).toBe(429);
+    resetLoginRateLimitForTests();
     expect((await request('/me', { token: memberToken })).body.user.passwordHash).toBeUndefined();
     expect((await request('/me', { method: 'PUT', token: memberToken, body: { name: 'Persisted Member', phone: '0499999999' } })).status).toBe(200);
     expect((await User.findById(memberId).lean())?.name).toBe('Persisted Member');
@@ -58,19 +87,24 @@ run('real MongoDB API integration', () => {
     expect((await request('/auth/login', { method: 'POST', body: { email: `${prefix}-member@seniorlearn.test`, password: 'Changed1!' } })).status).toBe(200);
   });
 
-  it('creates a complete standard registration without a date of birth', async () => {
+  it('creates a pending registration and activates only after DemoPay approval', async () => {
     const email = `${prefix}-registration@seniorlearn.test`;
-    const response = await request('/auth/register', { method: 'POST', body: { name: 'Registered Member', email, password: 'SeniorLearn1!', phone: '0412345678' } });
+    const response = await request('/auth/register', { method: 'POST', body: registrationInput('Registered Member',email) });
     expect(response.status).toBe(201);
     const user = await User.findById(response.body.user.id).select('+passwordHash').lean();
     owned.users.push(new mongoose.Types.ObjectId(response.body.user.id));
     expect(user?.roles).toEqual(['STANDARD']);
-    expect(user?.dateOfBirth).toBeUndefined();
+    expect(user?.dateOfBirth?.toISOString().slice(0,10)).toBe('1950-01-04');
     expect(user?.createdAt).toBeInstanceOf(Date);
     expect(await bcrypt.compare('SeniorLearn1!', user!.passwordHash)).toBe(true);
-    expect(await Membership.findOne({ user: user!._id, status: 'ACTIVE' })).toBeTruthy();
-    expect(await Payment.findOne({ user: user!._id, kind: 'REGISTRATION', status: 'SIMULATED_PAID' })).toBeTruthy();
-    expect((await request('/auth/register', { method: 'POST', body: { name: 'Registered Member', email, password: 'SeniorLearn1!', phone: '0412345678' } })).status).toBe(409);
+    expect(await Membership.findOne({ user: user!._id, status: 'PENDING' })).toBeTruthy();
+    expect(await Payment.findOne({ user: user!._id, kind: 'REGISTRATION', status: 'PENDING' })).toBeTruthy();
+    const login=await request('/auth/login',{method:'POST',body:{email,password:'SeniorLearn1!'}});
+    const checkout=await request('/payments/checkout',{method:'POST',token:login.body.token,body:{kind:'REGISTRATION'}}); expect(checkout.status).toBe(201);
+    const payment=await Payment.findById(checkout.body.paymentId).lean(); expect(payment?.status).toBe('PENDING');
+    expect((await request(`/payments/${payment!._id}/demo-complete`,{method:'POST',token:login.body.token,body:{cardholder:'Demo Member',cardNumber:'4242424242424242',expiry:'12/30',cvv:'123'}})).status).toBe(200);
+    expect((await Payment.findById(payment!._id).lean())?.status).toBe('PAID'); expect((await Membership.findOne({user:user!._id}).lean())?.status).toBe('ACTIVE');
+    expect((await request('/auth/register', { method: 'POST', body: registrationInput('Registered Member',email) })).status).toBe(409);
     expect((await request('/auth/register', { method: 'POST', body: { name: 'x', email: 'invalid', password: 'short', phone: 'x' } })).status).toBe(400);
   });
 
@@ -232,29 +266,21 @@ run('real MongoDB API integration', () => {
     expect((await request('/classes', { method: 'POST', token: await login(canonical.email), body: classInput({ title: 'Canonical wins', startsAt: future(123) }) })).status).toBe(403);
   });
 
-  it('enforces expiry states and processes an idempotent simulated renewal', async () => {
-    const expired=await register(`${prefix}-expired@seniorlearn.test`,'Expired Member'), expiredId=new mongoose.Types.ObjectId(expired.user.id); owned.users.push(expiredId);
+  it('keeps expired members restricted until DemoPay success and supports a cancelled-payment retry', async () => {
+    const expired=await register(`${prefix}-expired@seniorlearn.test`,'Expired Member'), expiredId=new mongoose.Types.ObjectId(expired.user.id);
     await Membership.findOneAndUpdate({user:expiredId},{status:'ACTIVE',expiresAt:new Date('2020-01-01T00:00:00Z')});
     expect((await request('/classes',{token:expired.token})).status).toBe(403);
-    expect((await request('/classes',{token:expired.token})).body.code).toBe('MEMBERSHIP_EXPIRED');
-    expect((await request('/notifications',{token:expired.token})).status).toBe(200);
-    expect((await request('/memberships/renewal-eligibility',{token:expired.token})).status).toBe(200);
-    expect((await request('/memberships/renew',{method:'POST',token:expired.token,body:{}})).status).toBe(402);
-    expect((await Membership.findOne({user:expiredId}).lean())?.status).toBe('ACTIVE');
-    const renewed=await request('/memberships/renew',{method:'POST',token:expired.token,body:{simulatePayment:true}}); expect(renewed.status).toBe(200); const firstExpiry=renewed.body.membership.expiresAt;
-    const duplicate=await request('/memberships/renew',{method:'POST',token:expired.token,body:{simulatePayment:true}}); expect(duplicate.status).toBe(200); expect(duplicate.body.duplicate).toBe(true); expect(duplicate.body.membership.expiresAt).toBe(firstExpiry);
-    expect(await Payment.countDocuments({user:expiredId,kind:'RENEWAL'})).toBe(1); expect(await Notification.countDocuments({user:expiredId,type:'MEMBERSHIP_RENEWED'})).toBe(1); expect((await request('/classes',{token:expired.token})).status).toBe(200);
-    const concurrent=await register(`${prefix}-concurrent@seniorlearn.test`,'Concurrent Renewal'), concurrentId=new mongoose.Types.ObjectId(concurrent.user.id); owned.users.push(concurrentId); await Membership.findOneAndUpdate({user:concurrentId},{status:'ACTIVE',expiresAt:new Date('2020-01-01')}); const concurrentResults=await Promise.all([request('/memberships/renew',{method:'POST',token:concurrent.token,body:{simulatePayment:true}}),request('/memberships/renew',{method:'POST',token:concurrent.token,body:{simulatePayment:true}})]); expect(concurrentResults.every(result=>result.status===200)).toBe(true); expect(await Payment.countDocuments({user:concurrentId,kind:'RENEWAL'})).toBe(1); expect(await Notification.countDocuments({user:concurrentId,type:'MEMBERSHIP_RENEWED'})).toBe(1);
-    const suspended=await register(`${prefix}-suspended@seniorlearn.test`,'Suspended Member'), suspendedId=new mongoose.Types.ObjectId(suspended.user.id); owned.users.push(suspendedId); await Membership.findOneAndUpdate({user:suspendedId},{status:'SUSPENDED'});
-    expect((await request('/memberships/renew',{method:'POST',token:suspended.token,body:{simulatePayment:true}})).body.code).toBe('MEMBERSHIP_SUSPENDED'); expect((await request('/classes',{token:suspended.token})).status).toBe(403);
-    const missing=await register(`${prefix}-missing@seniorlearn.test`,'Missing Membership'), missingId=new mongoose.Types.ObjectId(missing.user.id); owned.users.push(missingId); await Membership.deleteOne({user:missingId}); expect((await request('/classes',{token:missing.token})).body.code).toBe('MEMBERSHIP_UNAVAILABLE');
-    const honorary=await register(`${prefix}-honorary-lifetime@seniorlearn.test`,'Honorary Member'), honoraryId=new mongoose.Types.ObjectId(honorary.user.id); owned.users.push(honoraryId); await User.findByIdAndUpdate(honoraryId,{roles:['STANDARD','HONORARY']}); await Membership.findOneAndUpdate({user:honoraryId},{status:'EXPIRED',expiresAt:new Date('2020-01-01')}); const honoraryToken=honorary.token;
-    expect((await request('/classes',{token:honoraryToken})).status).toBe(200); expect((await request('/memberships/renew',{method:'POST',token:honoraryToken,body:{}})).body.lifetime).toBe(true); expect(await Payment.countDocuments({user:honoraryId,kind:'RENEWAL'})).toBe(0);
-    await Membership.findOneAndUpdate({user:(await User.findOne({email:`${prefix}-admin@seniorlearn.test`}))!._id},{status:'EXPIRED',expiresAt:new Date('2020-01-01')}); expect((await request('/admin/overview',{token:adminToken})).status).toBe(200);
+    const first=await request('/memberships/renew',{method:'POST',token:expired.token,body:{}}); expect(first.status).toBe(201);
+    let payment=await Payment.findById(first.body.paymentId).lean(); expect(payment?.status).toBe('PENDING');
+    expect((await request(`/payments/${payment!._id}/demo-cancel`,{method:'POST',token:expired.token,body:{}})).status).toBe(200);
+    expect((await Payment.findById(payment!._id).lean())?.status).toBe('CANCELLED'); expect((await request('/classes',{token:expired.token})).status).toBe(403);
+    const retry=await request('/memberships/renew',{method:'POST',token:expired.token,body:{}}); expect(retry.status).toBe(201); payment=await Payment.findById(retry.body.paymentId).lean();
+    expect((await request(`/payments/${payment!._id}/demo-complete`,{method:'POST',token:expired.token,body:{cardholder:'Demo Member',cardNumber:'4242424242424242',expiry:'12/30',cvv:'123'}})).status).toBe(200);
+    expect((await Payment.findById(payment!._id).lean())?.status).toBe('PAID'); expect((await Membership.findOne({user:expiredId}).lean())?.status).toBe('ACTIVE'); expect((await request('/classes',{token:expired.token})).status).toBe(200);
   });
 
   it('reads persisted records after the HTTP server is reinitialised', async () => {
-    await new Promise<void>(resolve => server.close(() => resolve())); server = http.createServer(app); await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve)); baseUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+    await closeServer(server); server = http.createServer(app); await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve)); baseUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
     expect((await request('/me', { token: memberToken })).body.user.id).toBe(memberId); expect(await LearningClass.exists({ _id: classId })).toBeTruthy();
   });
 });

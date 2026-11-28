@@ -26,13 +26,13 @@ describe("ConfirmationDialog", () => {
     const tree = render();
     const buttons = tree.root.findAll((node) => node.props.accessibilityRole === "button");
     expect(buttons.map((button) => button.props.accessibilityLabel)).toEqual(["Save Changes", "Cancel"]);
-    expect(buttons[0].props.style({ pressed: false })).toContainEqual({ backgroundColor: "#003366" });
+    expect(buttons[0].props.style({ pressed: false })).toContainEqual({ backgroundColor: "#007AFF" });
   });
 
   it("uses destructive styling only when explicitly requested", () => {
     const tree = render({ confirmLabel: "Delete Bulletin", variant: "destructive" });
     const button = tree.root.findAll((node) => node.props.accessibilityLabel === "Delete Bulletin")[0];
-    expect(button.props.style({ pressed: false })).toContainEqual({ backgroundColor: "#D92D20" });
+    expect(button.props.style({ pressed: false })).toContainEqual({ backgroundColor: "#C9362B" });
   });
 
   it("dismisses without confirming, and loading prevents another confirmation", async () => {

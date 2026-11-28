@@ -17,7 +17,8 @@ import {
 import { classSchedule } from "../../src/lib/classFormat";
 import { useFeedback } from "../../src/context/Feedback";
 import { api } from "../../src/lib/api";
-import { Card, Field, PageTitle, StatusBadge } from "../../src/components/ui";
+import { AppButton, Card, Field, PageTitle, StatusBadge } from "../../src/components/ui";
+import { LoadingIndicator } from "../../src/components/LoadingIndicator";
 import { colors, space, type } from "../../src/theme/tokens";
 import { ScaledText as Text } from "../../src/components/ScaledText";
 import { MonthYearWheelPicker } from "../../src/components/MonthYearWheelPicker";
@@ -38,11 +39,19 @@ export default function Enrolments() {
   const { show } = useFeedback();
   const router = useRouter();
   const [refreshing, setRefreshing] = useState(false);
+  const [initialLoading, setInitialLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
   const load = async () => {
     try {
-      setRows((await api.get("/enrollments")).data);
+      setLoadError("");
+      const { data } = await api.get("/enrollments");
+      // No enrolments is a normal successful state, not an application error.
+      setRows(Array.isArray(data) ? data : []);
     } catch {
+      setLoadError("Unable to load enrolments.");
       show("ERROR", "Unable to load enrolments.");
+    } finally {
+      setInitialLoading(false);
     }
   };
   const refresh = async () => { setRefreshing(true); try { await load(); } finally { setRefreshing(false); } };
@@ -97,11 +106,10 @@ export default function Enrolments() {
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="Previous month"
-          onPress={() =>
-            setMonth(
-              (value) => new Date(value.getFullYear(), value.getMonth() - 1, 1),
-            )
-          }
+          onPress={() => {
+            setMonth((value) => new Date(value.getFullYear(), value.getMonth() - 1, 1));
+            setSelected(null);
+          }}
           style={s.monthNav}
         >
           <Ionicons name="chevron-back" size={24} color={colors.primary} />
@@ -119,11 +127,10 @@ export default function Enrolments() {
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="Next month"
-          onPress={() =>
-            setMonth(
-              (value) => new Date(value.getFullYear(), value.getMonth() + 1, 1),
-            )
-          }
+          onPress={() => {
+            setMonth((value) => new Date(value.getFullYear(), value.getMonth() + 1, 1));
+            setSelected(null);
+          }}
           style={s.monthNav}
         >
           <Ionicons name="chevron-forward" size={24} color={colors.primary} />
@@ -187,7 +194,7 @@ export default function Enrolments() {
           </>
         }
         renderItem={() =>
-          section === "Upcoming" ? (
+          initialLoading ? <LoadingIndicator accessibilityLabel="Loading enrolments" /> : loadError ? <View style={s.state}><Text accessibilityRole="alert" style={s.empty}>{loadError}</Text><AppButton label="Try again" variant="outline" onPress={() => void load()} /></View> : section === "Upcoming" ? (
             <>
               {cards(upcoming)}
               {!upcoming.length && (
@@ -234,6 +241,7 @@ const s = StyleSheet.create({
     textAlign: "center",
     color: colors.textSecondary,
   },
+  state: { alignItems: "center", gap: space.sm },
   monthBar: { flexDirection: "row", alignItems: "center" },
   monthNav: {
     width: 44,

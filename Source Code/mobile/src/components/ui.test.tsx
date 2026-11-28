@@ -11,6 +11,7 @@ vi.mock("react-native", () => ({
   Platform: { select: <T,>(values: { default: T }) => values.default },
   Pressable: "Pressable",
   StyleSheet: { create: <T,>(styles: T) => styles },
+  Text: "Text",
   TextInput: "TextInput",
   View: "View",
 }));

@@ -14,11 +14,14 @@ vi.mock("react-native", () => ({
     addEventListener: () => ({ remove: () => undefined }),
   },
   ActivityIndicator: "ActivityIndicator",
+  Image: "Image",
   KeyboardAvoidingView: "KeyboardAvoidingView",
+  Modal: "Modal",
   Platform: { OS: "web", select: <T,>(values: { default: T }) => values.default },
   Pressable: "Pressable",
   ScrollView: "ScrollView",
   StyleSheet: { create: <T,>(styles: T) => styles, flatten: <T,>(value: T) => value },
+  Text: "Text",
   TextInput: "TextInput",
   View: "View",
 }));
@@ -28,6 +31,7 @@ vi.mock("../context/Feedback", () => ({ useFeedback: () => ({ show: vi.fn() }) }
 vi.mock("../lib/api", () => ({ api: { post }, loginErrorMessage: vi.fn() }));
 vi.mock("../context/Preferences", () => ({ usePreferences: () => ({ fontScale: 1 }) }));
 vi.mock("../components/ScaledText", () => ({ ScaledText: "Text" }));
+vi.mock("../components/DatePickerField", () => ({ DatePickerField: ({ label, value, onChange }: any) => React.createElement("TextInput", { accessibilityLabel: label, value, onChangeText: onChange }) }));
 
 import Register from "../../app/(auth)/register";
 
@@ -53,14 +57,8 @@ describe("Register", () => {
     const labels = renderer!.root
       .findAll((node) => (node.type as unknown) === "TextInput")
       .map((node) => node.props.accessibilityLabel);
-    expect(labels).toEqual([
-      "Full name",
-      "Email address",
-      "Phone number",
-      "Password",
-      "Confirm password",
-    ]);
-    expect(JSON.stringify(tree)).not.toContain("Date of birth");
+    expect(labels).toEqual(["Full name", "Date of birth", "Phone number"]);
+    expect(JSON.stringify(tree)).toContain("Your details");
   });
 
   it("shows validation messages without creating raw View text", async () => {
@@ -71,27 +69,31 @@ describe("Register", () => {
 
     await act(async () => {
       renderer!.root
-        .find((node) => node.props.accessibilityLabel === "Register")
+        .find((node) => node.props.accessibilityLabel === "Continue")
         .props.onPress();
     });
 
     const tree = renderer!.toJSON() as Tree;
     expect(rawTextOutsideText(tree)).toEqual([]);
-    expect(JSON.stringify(tree)).toContain("Please enter your full name.");
-    expect(JSON.stringify(tree)).toContain("Email address is required.");
+    expect(JSON.stringify(tree)).toContain("Enter your full name.");
+    expect(JSON.stringify(tree)).toContain("Enter a valid phone number.");
   });
 
-  it("redirects successful registration to Login without creating a session", async () => {
-    post.mockResolvedValueOnce({ data: { token: "returned-but-unused", user: { id: "1" } } });
+  it("signs in and opens the dashboard after successful registration", async () => {
+    post.mockResolvedValueOnce({ data: { token: "new-session-token", user: { id: "1" } } });
     let renderer: ReturnType<typeof create>;
     act(() => { renderer = create(<Register />); });
-    const inputs = renderer!.root.findAll((node) => (node.type as unknown) === "TextInput");
-    const values = ["New Member", "new@example.com", "0412345678", "SeniorLearn1!", "SeniorLearn1!"];
-    inputs.forEach((input, index) => act(() => input.props.onChangeText(values[index])));
+    let inputs = renderer!.root.findAll((node) => (node.type as unknown) === "TextInput");
+    ["New Member", "1950-01-01", "0412345678"].forEach((value, index) => act(() => inputs[index].props.onChangeText(value)));
+    act(() => renderer!.root.find((node) => node.props.accessibilityLabel === "Continue").props.onPress());
+    inputs = renderer!.root.findAll((node) => (node.type as unknown) === "TextInput");
+    ["new@example.com", "SeniorLearn1!", "SeniorLearn1!"].forEach((value, index) => act(() => inputs[index].props.onChangeText(value)));
+    act(() => renderer!.root.find((node) => node.props.accessibilityLabel === "Continue").props.onPress());
+    act(() => renderer!.root.findAll((node) => node.props.accessibilityRole === "checkbox")[0].props.onPress());
     await act(async () => {
-      renderer!.root.find((node) => node.props.accessibilityLabel === "Register").props.onPress();
+      renderer!.root.find((node) => node.props.accessibilityLabel === "Create account").props.onPress();
     });
-    expect(signIn).not.toHaveBeenCalled();
-    expect(router.replace).toHaveBeenCalledWith({ pathname: "/(auth)/login", params: { registered: "1", email: "new@example.com" } });
+    expect(signIn).toHaveBeenCalledWith("new-session-token", { id: "1" });
+    expect(router.replace).toHaveBeenCalledWith("/(tabs)");
   });
 });

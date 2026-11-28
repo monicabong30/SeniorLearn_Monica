@@ -14,8 +14,11 @@ export function scaledTextStyle(style: TextProps["style"], fontScale: number) {
     ? scaleTypographyStyle(flat, fontScale)
     : style;
 }
-export function ScaledText({ style, ...props }: TextProps) {
+export function ScaledText({ style, children, ...props }: TextProps) {
   const { fontScale } = usePreferences();
   const scaled = scaledTextStyle(style, fontScale);
-  return <NativeText {...props} style={scaled} />;
+  // React Native Web can re-parent a text child during a state update when it
+  // arrives through a spread props object. Pass it explicitly so every screen
+  // using ScaledText has a stable native Text boundary.
+  return <NativeText {...props} style={scaled} children={children} />;
 }

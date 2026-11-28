@@ -6,9 +6,11 @@ export function effectiveMembershipStatus(user:any, membership:any, now=new Date
   if (isAdmin(user)) return 'ADMIN';
   if (userRoles(user).includes('HONORARY')) return 'LIFETIME';
   if (!membership) return 'MISSING';
+  // New memberships do not receive an expiry date until activation.  Treat
+  // them as pending rather than invalid while that setup is in progress.
+  if (membership.status === 'PENDING') return 'PENDING';
   if (!membership.expiresAt || Number.isNaN(new Date(membership.expiresAt).getTime())) return 'INVALID';
   if (membership.status === 'SUSPENDED') return 'SUSPENDED';
-  if (membership.status === 'PENDING') return 'PENDING';
   if (membership.status === 'EXPIRED') return 'EXPIRED';
   if (membership.status !== 'ACTIVE') return 'INVALID';
   const expiry = new Date(membership.expiresAt);

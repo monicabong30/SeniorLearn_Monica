@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
-import { Modal, Pressable, StyleSheet, View } from "react-native";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { colors, space, type } from "../theme/tokens";
-import { compactReadableDate, dateOnly, readableDate } from "../lib/registration";
-import { ScaledText as Text } from "./ScaledText";
+import { compactReadableDate, dateOnly, localDateOnly, readableDate } from "../lib/registration";
 import { MonthYearWheelPicker, monthNames } from "./MonthYearWheelPicker";
+import { DismissibleModal } from "./DismissibleModal";
 const weekdays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"],
   pad = (n: number) => String(n).padStart(2, "0");
 export function DatePickerField({
@@ -15,34 +15,50 @@ export function DatePickerField({
   maximumDate,
   minimumDate,
   compact = false,
+  placeholder,
 }: {
-  value: string;
+  value?: string | null;
   onChange: (v: string) => void;
   error?: string;
   label?: string;
-  maximumDate?: string;
-  minimumDate?: string;
+  maximumDate?: string | null;
+  minimumDate?: string | null;
   /** Use a shorter value in constrained layouts; the picker itself stays unchanged. */
   compact?: boolean;
+  placeholder?: string;
 }) {
-  const initial = value ? new Date(`${value}T12:00:00`) : new Date(),
-    min = minimumDate && dateOnly(minimumDate) ? minimumDate : undefined,
+  // Keep date-only values in local time. Parsing at noon prevents a UTC offset
+  // from changing the calendar day shown to the user.
+  const today = localDateOnly(),
+    selectedValue = typeof value === "string" && dateOnly(value) ? value : undefined,
+    requestedMin = typeof minimumDate === "string" && dateOnly(minimumDate) ? minimumDate : undefined,
+    // Class schedules must never be placed in the past. Other uses (such as
+    // date of birth and historical filters) retain their supplied bounds.
+    scheduleMinimum = /class date/i.test(label) ? today : undefined,
+    requestedMax = typeof maximumDate === "string" && dateOnly(maximumDate) ? maximumDate : undefined,
+    minCandidate = requestedMin ?? scheduleMinimum,
+    min = minCandidate && (!requestedMax || minCandidate <= requestedMax) ? minCandidate : undefined,
+    max = requestedMax && (!requestedMin || requestedMin <= requestedMax) ? requestedMax : undefined,
+    initialValue = selectedValue ?? min ?? max,
+    initial = initialValue ? new Date(`${initialValue}T12:00:00`) : new Date(),
     [open, setOpen] = useState(false),
     [year, setYear] = useState(initial.getFullYear()),
     [month, setMonth] = useState(initial.getMonth()),
     [monthOpen, setMonthOpen] = useState(false);
   useEffect(() => {
-    if (open && (value || min)) {
-      const selected = value && (!min || value >= min) ? value : min;
-      const d = new Date(`${selected!}T12:00:00`);
+    if (open) {
+      const focusDate = selectedValue && (!min || selectedValue >= min) && (!max || selectedValue <= max)
+        ? selectedValue
+        : min ?? max;
+      if (!focusDate) return;
+      const d = new Date(`${focusDate}T12:00:00`);
       setYear(d.getFullYear());
       setMonth(d.getMonth());
     }
-  }, [open, value, min]);
+  }, [open, selectedValue, min, max]);
   // An omitted maximum means all calendar dates are selectable. This is required
   // by shared future-date pickers; DOB supplies a concrete maximum below.
-  const max = maximumDate && dateOnly(maximumDate) ? maximumDate : undefined,
-    todayYear = new Date().getFullYear(),
+  const todayYear = new Date().getFullYear(),
     maxYear = Math.max(max ? Number(max.slice(0, 4)) : todayYear + 20, min ? Number(min.slice(0, 4)) : 0),
     minYear = min ? Number(min.slice(0, 4)) : Math.min(1900, year, maxYear),
     years = useMemo(
@@ -70,37 +86,25 @@ export function DatePickerField({
     nextDisabled = year === maxYear && month === 11 || Boolean(max && year === Number(max.slice(0, 4)) && month === Number(max.slice(5, 7)) - 1);
   return (
     <View style={s.box}>
-      <Text style={s.label}>{label}</Text>
+      <Text style={s.label} children={label} />
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={`Choose ${label}${error ? `, error: ${error}` : ""}`}
         onPress={() => setOpen(true)}
         style={[s.control, error && s.invalid]}
       >
-        <Text numberOfLines={1} style={[value ? s.value : s.placeholder, s.controlText]}>
-          {value ? (compact ? compactReadableDate(value) : readableDate(value)) : `Choose ${label.toLowerCase()}`}
-        </Text>
+        <Text numberOfLines={1} style={[selectedValue ? s.value : s.placeholder, s.controlText]} children={selectedValue ? (compact ? compactReadableDate(selectedValue) : readableDate(selectedValue)) : (placeholder || "DD/MM/YYYY")} />
         <Ionicons accessible={false} name="calendar-outline" size={18} color={colors.primary} />
       </Pressable>
       {error && (
-        <Text accessibilityRole="alert" style={s.error}>
-          {error}
-        </Text>
+        <Text accessibilityRole="alert" style={s.error} children={error} />
       )}
-      <Modal
-        visible={open}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setOpen(false)}
-      >
-        <View style={s.back}>
-          <View accessibilityViewIsModal style={s.modal}>
-            <Text accessibilityRole="header" style={s.title}>
-              Choose {label.toLowerCase()}
-            </Text>
+      <DismissibleModal visible={open} animationType="fade" onDismiss={() => setOpen(false)} backdropStyle={s.back} accessibilityLabel={`Close ${label.toLowerCase()} calendar`}>
+          <View style={s.modal}>
+            <Text accessibilityRole="header" style={s.title} children={`Choose ${label.toLowerCase()}`} />
             <View style={s.calendarHeader}>
             <Pressable accessibilityRole="button" accessibilityLabel="Previous month" disabled={previousDisabled} onPress={() => { if (month === 0) { setMonth(11); setYear((v) => v - 1); } else setMonth((v) => v - 1); }} style={s.arrow}>
-              <Text style={s.arrowText}>〈</Text>
+              <Text style={s.arrowText} children="〈" />
             </Pressable>
             <Pressable
               accessibilityRole="button"
@@ -108,64 +112,51 @@ export function DatePickerField({
               onPress={() => setMonthOpen(true)}
               style={s.monthYear}
             >
-              <Text style={s.monthYearText}>
-                {monthNames[month]} {year}
-              </Text>
+              <Text style={s.monthYearText} children={`${monthNames[month]} ${year}`} />
             </Pressable>
             <Pressable accessibilityRole="button" accessibilityLabel="Next month" disabled={nextDisabled} onPress={() => { if (month === 11) { setMonth(0); setYear((v) => v + 1); } else setMonth((v) => v + 1); }} style={s.arrow}>
-              <Text style={s.arrowText}>〉</Text>
+              <Text style={s.arrowText} children="〉" />
             </Pressable>
             </View>
             <View style={s.week}>
               {weekdays.map((x) => (
-                <Text key={x} style={s.weekText}>
-                  {x}
-                </Text>
+                <Text key={x} style={s.weekText} children={x} />
               ))}
             </View>
             <View style={s.days}>
               {Array.from({ length: offset }, (_, i) => (
                 <View key={`blank${i}`} style={s.day} />
               ))}
-              {days.map((day) => (
-                <Pressable
+              {days.map((day) => {
+                const date = `${year}-${pad(month + 1)}-${pad(day)}`;
+                const isToday = date === today;
+                const isSelected = selectedValue === date;
+                return <Pressable
                   disabled={!valid(day)}
                   key={day}
-                  accessibilityLabel={`${day} ${monthNames[month]} ${year}`}
+                  accessibilityLabel={`${day} ${monthNames[month]} ${year}${isToday ? ", today" : ""}`}
                   onPress={() => {
                     onChange(`${year}-${pad(month + 1)}-${pad(day)}`);
                     setOpen(false);
                   }}
                   style={[
-                    s.day,
-                    value === `${year}-${pad(month + 1)}-${pad(day)}` &&
-                      s.daySelected,
+                    s.day, isToday && s.dayToday, isSelected && s.daySelected,
                   ]}
                 >
-                  <Text
-                    style={[
-                      s.dayText,
-                      !valid(day) && s.disabledText,
-                      value === `${year}-${pad(month + 1)}-${pad(day)}` &&
-                        s.daySelectedText,
-                    ]}
-                  >
-                    {day}
-                  </Text>
+                  <Text style={[s.dayText, !valid(day) && s.disabledText, isSelected && s.daySelectedText]} children={String(day)} />
                 </Pressable>
-              ))}
+              })}
             </View>
             <Pressable
               accessibilityRole="button"
               onPress={() => setOpen(false)}
               style={s.cancel}
             >
-              <Text style={s.cancelText}>Cancel</Text>
+              <Text style={s.cancelText} children="Cancel" />
             </Pressable>
           </View>
-        </View>
-      </Modal>
-      <MonthYearWheelPicker visible={monthOpen} month={month} year={year} minYear={minYear} maxYear={maxYear} onDismiss={() => setMonthOpen(false)} onDone={(nextMonth, nextYear) => { setMonth(nextMonth); setYear(nextYear); setMonthOpen(false); }} />
+      </DismissibleModal>
+      {monthOpen ? <MonthYearWheelPicker visible month={month} year={year} minYear={minYear} maxYear={maxYear} onDismiss={() => setMonthOpen(false)} onDone={(nextMonth, nextYear) => { setMonth(nextMonth); setYear(nextYear); setMonthOpen(false); }} /> : null}
     </View>
   );
 }
@@ -227,6 +218,7 @@ const s = StyleSheet.create({
   },
   dayText: { color: colors.text },
   daySelected: { backgroundColor: colors.primary },
+  dayToday: { borderWidth: 2, borderColor: colors.primary },
   daySelectedText: { color: "#fff", fontWeight: "700" },
   disabledText: { color: colors.disabled },
   cancel: {

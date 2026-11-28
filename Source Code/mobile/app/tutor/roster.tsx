@@ -38,7 +38,7 @@ export default function Roster() {
           />
           <Field
             label="Search enrolled members"
-            placeholder="Name or email"
+            placeholder="Search members..."
             value={q}
             onChangeText={setQ}
           />

@@ -9,7 +9,7 @@ const { get, put, show, replace } = vi.hoisted(() => ({
 vi.mock("react-native", () => ({
   AccessibilityInfo: { isReduceMotionEnabled: () => Promise.resolve(false), addEventListener: () => ({ remove: () => undefined }) },
   ActivityIndicator: "ActivityIndicator", Platform: { OS: "web", select: <T,>(values: { default: T }) => values.default }, Pressable: "Pressable", ScrollView: "ScrollView",
-  StyleSheet: { create: <T,>(styles: T) => styles }, TextInput: "TextInput", View: "View",
+  StyleSheet: { create: <T,>(styles: T) => styles }, Text: "Text", TextInput: "TextInput", View: "View",
 }));
 vi.mock("expo-router", () => ({ useLocalSearchParams: () => ({ id: "bulletin-1" }), useRouter: () => ({ replace }) }));
 vi.mock("../context/Feedback", () => ({ useFeedback: () => ({ show }) }));

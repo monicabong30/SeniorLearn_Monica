@@ -61,11 +61,13 @@ export function TimePickerField({
   value,
   onChange,
   error,
+  placeholder,
 }: {
   label?: string;
   value: string;
   onChange: (value: string) => void;
   error?: string;
+  placeholder?: string;
 }) {
   const [open, setOpen] = useState(false),
     [draft, setDraft] = useState(timeParts(value || "09:00"));
@@ -90,7 +92,7 @@ export function TimePickerField({
         <Text style={s.value}>
           {value
             ? `${draft.hour}:${pad(draft.minute)} ${draft.period}`
-            : "Choose a time"}
+            : (placeholder || "Select time")}
         </Text>
       </Pressable>
       {error && (

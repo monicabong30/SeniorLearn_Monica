@@ -1,155 +1,25 @@
-import { ScaledText as Text } from "../../src/components/ScaledText";
 import { useCallback, useState } from "react";
-import { useFocusEffect, useLocalSearchParams } from "expo-router";
-import { ScrollView, StyleSheet } from "react-native";
-import { useFeedback } from "../../src/context/Feedback";
+import { useFocusEffect, useRouter } from "expo-router";
+import { Pressable, ScrollView, StyleSheet, View } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
 import { api } from "../../src/lib/api";
-import {
-  AppButton,
-  Card,
-  Field,
-  PageTitle,
-  StatusBadge,
-} from "../../src/components/ui";
-import { colors, space } from "../../src/theme/tokens";
-import { ConfirmationDialog } from "../../src/components/ConfirmationDialog";
-import { useFormSubmitState } from "../../src/hooks/useFormSubmitState";
-export default function Recurring() {
-  const { seriesId, occurrenceId } = useLocalSearchParams<{
-      seriesId?: string;
-      occurrenceId?: string;
-    }>(),
-    [rows, setRows] = useState<any[]>([]),
-    [selectedId, setSelectedId] = useState<string | undefined>(occurrenceId),
-    [scope, setScope] = useState<"SINGLE" | "FUTURE" | "ALL">("SINGLE"),
-    [title, setTitle] = useState(""),
-    [pending, setPending] = useState(false),
-    [confirmCancel, setConfirmCancel] = useState(false),
-    { show } = useFeedback();
-  const load = async () => {
-    try {
-      const data = (
-        await api.get("/classes", { params: { mine: "true" } })
-      ).data.filter((x: any) => !seriesId || x.recurrenceSeriesId === seriesId);
-      setRows(data);
-      const target =
-        data.find((x: any) => x._id === selectedId) ||
-        data.find((x: any) => x._id === occurrenceId) ||
-        data[0];
-      setSelectedId(target?._id);
-      setTitle(target?.title || "");
-    } catch {
-      show("ERROR", "Unable to load recurring classes.");
-    }
-  };
-  useFocusEffect(
-    useCallback(() => {
-      void load();
-    }, [seriesId, occurrenceId]),
-  );
-  const selected = rows.find((x) => x._id === selectedId);
-  const form=useFormSubmitState({initialValues:{title:selected?.title||""},values:{title},validate:(v):Record<string,string>=>v.title.trim().length<3?{title:"Class title must be at least 3 characters."}:{},isSubmitting:pending,mode:"edit",normalize:v=>({title:v.title.trim()})});
-  const act = async (cancel: boolean) => {
-    if (!selected || (!cancel&&!form.canSubmit)) return;
-    try {
-      setPending(true);
-      if (cancel)
-        await api.post(
-          `/recurrences/${selected.recurrenceSeriesId}/${selected._id}/cancel`,
-          { scope },
-        );
-      else
-        await api.put(
-          `/recurrences/${selected.recurrenceSeriesId}/${selected._id}`,
-          { scope, title: title || selected.title },
-        );
-      await load();
-      show(
-        "SUCCESS",
-        cancel
-          ? "Selected occurrences cancelled successfully."
-          : "Selected occurrences updated successfully.",
-      );
-    } catch {
-      show(
-        "ERROR",
-        cancel
-          ? "Unable to cancel selected occurrences."
-          : "Unable to update selected occurrences.",
-      );
-    } finally {
-      setPending(false);
-    }
-  };
-  return (
-    <ScrollView contentContainerStyle={s.page}>
-      <PageTitle
-        title="Manage recurring classes"
-        subtitle="Select an occurrence, then choose how widely changes apply."
-      />
-      {rows.map((x) => (
-        <Card key={x._id}>
-          <Text style={s.title}>{x.title}</Text>
-          <Text>{new Date(x.startsAt).toLocaleDateString()}</Text>
-          <StatusBadge
-            status={x._id === selectedId ? "Selected" : "Choose occurrence"}
-          />
-          <AppButton
-            label={
-              x._id === selectedId ? "Selected occurrence" : "Select occurrence"
-            }
-            variant="outline"
-            onPress={() => {
-              setSelectedId(x._id);
-              setTitle(x.title);
-            }}
-          />
-        </Card>
-      ))}
-      {selected && (
-        <Card>
-          <Text style={s.title}>Apply changes</Text>
-          <Field label="Class title" value={title} onChangeText={setTitle} />
-          {!form.isValid&&<Text style={{color:colors.error}}>{form.errors.title}</Text>}
-          <Text>Scope: {scope.toLowerCase()}</Text>
-          {(["SINGLE", "FUTURE", "ALL"] as const).map((x) => (
-            <AppButton
-              key={x}
-              label={
-                x === "SINGLE"
-                  ? "This class only"
-                  : x === "FUTURE"
-                    ? "This and future classes"
-                    : "All classes in series"
-              }
-              variant={scope === x ? "primary" : "outline"}
-              disabled={pending}
-              onPress={() => setScope(x)}
-            />
-          ))}
-          <AppButton
-            label="Update selected scope"
-            loading={pending}
-            disabled={!form.canSubmit}
-            onPress={() => act(false)}
-          />
-          <AppButton
-            label="Cancel selected scope"
-            variant="destructive"
-            loading={pending}
-            onPress={() => setConfirmCancel(true)}
-          />
-        </Card>
-      )}
-      <ConfirmationDialog visible={confirmCancel} title="Cancel recurring classes?" message={`This will cancel ${scope === "SINGLE" ? "this class only" : scope === "FUTURE" ? "this class and future classes" : "all classes in this series"}.`} safeLabel="Keep Classes" destructiveLabel="Cancel Classes" loading={pending} onDismiss={() => setConfirmCancel(false)} onConfirm={async () => { await act(true); setConfirmCancel(false); }} />
-    </ScrollView>
-  );
+import { Card, PageTitle } from "../../src/components/ui";
+import { LoadingIndicator } from "../../src/components/LoadingIndicator";
+import { ScaledText as Text } from "../../src/components/ScaledText";
+import { colors, space, type } from "../../src/theme/tokens";
+import { useFeedback } from "../../src/context/Feedback";
+
+const frequency = (rows: any[]) => rows.length > 1 && Math.round((+new Date(rows[1].startsAt) - +new Date(rows[0].startsAt)) / 86400000) === 14 ? "Every 2 weeks" : "Weekly";
+const time = (row: any) => { const start = new Date(row.startsAt), end = new Date(+start + row.durationMinutes * 60000); return `${start.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })} – ${end.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`; };
+
+export default function RecurringClasses() {
+  const router = useRouter(), { show } = useFeedback();
+  const [rows, setRows] = useState<any[]>([]), [loading, setLoading] = useState(true), [error, setError] = useState("");
+  const load = async () => { try { setError(""); const { data } = await api.get("/classes", { params: { mine: "true" } }); setRows(Array.isArray(data) ? data.filter((x: any) => x.recurrenceSeriesId) : []); } catch { setError("Unable to load recurring classes."); show("ERROR", "Unable to load recurring classes."); } finally { setLoading(false); } };
+  useFocusEffect(useCallback(() => { void load(); }, []));
+  const series = Object.values(rows.reduce<Record<string, any[]>>((all, row) => { (all[row.recurrenceSeriesId] ||= []).push(row); return all; }, {})).map(items => items.sort((a, b) => +new Date(a.startsAt) - +new Date(b.startsAt)));
+  return <ScrollView contentContainerStyle={s.page}><PageTitle title="Recurring classes" />
+    {loading ? <LoadingIndicator accessibilityLabel="Loading recurring classes" /> : error ? <View style={s.state}><Text accessibilityRole="alert">{error}</Text><Pressable accessibilityRole="button" onPress={() => void load()}><Text style={s.retry}>Try again</Text></Pressable></View> : series.length ? series.map(items => { const first = items[0], last = items[items.length - 1]; return <Pressable key={first.recurrenceSeriesId} accessibilityRole="button" accessibilityLabel={`Manage ${first.title} recurring classes`} onPress={() => router.push({ pathname: "/tutor/recurring/[seriesId]", params: { seriesId: first.recurrenceSeriesId } })}><Card style={s.card}><View style={s.row}><View style={s.content}><Text style={s.title}>{first.title}</Text><Text style={s.meta}>{frequency(items)} · {time(first)}</Text><Text style={s.meta}>{new Date(first.startsAt).toLocaleDateString("en-AU")} – {new Date(last.startsAt).toLocaleDateString("en-AU")}</Text><Text style={s.meta}>{items.length} scheduled class{items.length === 1 ? "" : "es"}</Text></View><Ionicons name="chevron-forward" size={24} color={colors.primary} /></View><Text style={s.action}>Manage Classes</Text></Card></Pressable>; }) : <Text style={s.empty}>No recurring classes yet.</Text>}
+  </ScrollView>;
 }
-const s = StyleSheet.create({
-  page: {
-    padding: space.lg,
-    gap: space.md,
-    backgroundColor: colors.background,
-  },
-  title: { fontSize: 20, fontWeight: "700", color: colors.primary },
-});
+const s = StyleSheet.create({ page: { padding: space.lg, gap: space.md, backgroundColor: colors.background, flexGrow: 1 }, card: { gap: space.sm }, row: { flexDirection: "row", alignItems: "center", gap: space.sm }, content: { flex: 1, gap: 3 }, title: { ...type.section, color: colors.primary }, meta: { ...type.secondary, color: colors.textSecondary }, action: { color: colors.primary, fontWeight: "700" }, empty: { textAlign: "center", padding: space.xxl, color: colors.textSecondary }, state: { alignItems: "center", gap: space.sm, padding: space.xxl }, retry: { color: colors.primary, fontWeight: "700", padding: space.sm } });

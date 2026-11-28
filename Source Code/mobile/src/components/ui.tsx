@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
 import {
   AccessibilityInfo,
-  ActivityIndicator,
   Pressable,
   StyleSheet,
+  Text as NativeText,
   TextInput,
   View,
   type TextInputProps,
@@ -13,6 +13,8 @@ import { Ionicons } from "@expo/vector-icons";
 import { colors, shadow, space, type } from "../theme/tokens";
 import { usePreferences } from "../context/Preferences";
 import { ScaledText as Text } from "./ScaledText";
+import { PasswordInput } from "./PasswordInput";
+import { LoadingIndicator } from "./LoadingIndicator";
 export function Screen({
   children,
   style,
@@ -29,20 +31,12 @@ export function PageTitle({
   title: string;
   subtitle?: string;
 }) {
-  return (
-    <View style={s.heading}>
-      {/** The navigator owns the primary screen title.  Keeping PageTitle as
-       * an intro container lets existing screens retain useful context without
-       * rendering a second, competing page heading. */}
-      {subtitle && (
-        <Text
-          style={s.subtitle}
-        >
-          {subtitle}
-        </Text>
-      )}
-    </View>
-  );
+  // A fragment avoids a web renderer edge case where a scaled text component
+  // inside a layout View was reported as a raw text child.
+  return <>
+    <Text accessibilityRole="header" style={[s.title, s.headingTitle]}>{title}</Text>
+    {subtitle ? <Text style={s.subtitle}>{subtitle}</Text> : null}
+  </>;
 }
 export function Card({
   children,
@@ -93,9 +87,7 @@ export function AppButton({
       ]}
     >
       {loading ? (
-        <ActivityIndicator
-          color={variant === "outline" || variant === "text" ? colors.primary : "#fff"}
-        />
+        <LoadingIndicator variant="inline" color={variant === "outline" || variant === "text" ? colors.primary : "#fff"} accessibilityLabel={`${label} in progress`} />
       ) : (
         <Text
           style={[s.buttonText, (variant === "outline" || variant === "text") && s.outlineText]}
@@ -106,58 +98,53 @@ export function AppButton({
     </Pressable>
   );
 }
-export function Field({
-  label,
-  error,
-  style,
-  secureTextEntry,
-  children: _children,
-  ...props
-}: TextInputProps & { label: string; error?: string }) {
-  const [visible, setVisible] = useState(false),
-    password = !!secureTextEntry;
+export function Field(fieldProps: TextInputProps & { label: string; error?: string }) {
+  // Fields never render children. Explicitly remove them before forwarding
+  // input props so a stray JSX text node cannot reach a native View.
+  const { label, error, style, secureTextEntry, children: _children, ...inputProps } = fieldProps;
+  const placeholderExamples: Record<string, string> = {
+    "class title": "e.g. Introduction to Digital Photography",
+    "description": "e.g. Learn basic photography skills",
+    "full name": "e.g. Jane Smith",
+    "email address": "jane@example.com",
+    "password": "Password",
+    "confirm password": "Confirm password",
+    "microsoft teams link": "https://teams.microsoft.com/...",
+    "venue address": "e.g. 25 George Street",
+    "bulletin title": "e.g. Upcoming Learning Workshop",
+    "bulletin message": "e.g. Join us for our next workshop",
+    "name on card": "e.g. Jane Smith",
+    "cvv": "CVV",
+  };
+  const normalizedLabel = label.toLowerCase();
+  const defaultPlaceholder = placeholderExamples[normalizedLabel]
+    ?? (normalizedLabel.startsWith("search") ? `${label}...` : label);
+  const sanitizedInputProps = { placeholder: defaultPlaceholder, ...inputProps } as TextInputProps & { children?: never };
+  delete (sanitizedInputProps as { children?: unknown }).children;
+  const password = !!secureTextEntry;
   const { fontScale } = usePreferences();
   return (
     <View style={s.field}>
-      <Text
-        style={s.label}
-      >
-        {label}
-      </Text>
-      <View style={s.inputWrap}>
-        <TextInput
+      <NativeText style={s.label} children={label} />
+      {password ? <PasswordInput
+          containerStyle={s.inputWrap}
           accessibilityLabel={label}
           placeholderTextColor={colors.textSecondary}
           style={[
             s.input,
             { fontSize: 17 * fontScale, lineHeight: 25 * fontScale },
             error && s.inputError,
-            password && s.passwordInput,
             style,
           ]}
-          secureTextEntry={password && !visible}
-          {...props}
-        />
-        {password && (
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={visible ? "Hide password" : "Show password"}
-            accessibilityHint="Keeps the password you entered"
-            hitSlop={8}
-            onPress={() => setVisible((v) => !v)}
-            style={({ pressed }) => [
-              s.visibility,
-              pressed && s.visibilityPressed,
-            ]}
-          >
-            <Ionicons name={visible ? "eye-off-outline" : "eye-outline"} size={22} color={colors.textSecondary} />
-          </Pressable>
-        )}
-      </View>
+          {...sanitizedInputProps}
+        /> : <View style={s.inputWrap}><TextInput
+          accessibilityLabel={label}
+          placeholderTextColor={colors.textSecondary}
+          style={[s.input, { fontSize: 17 * fontScale, lineHeight: 25 * fontScale }, error && s.inputError, style]}
+          {...sanitizedInputProps}
+        /></View>}
       {error && (
-        <Text accessibilityRole="alert" style={s.error}>
-          {error}
-        </Text>
+        <NativeText accessibilityRole="alert" style={s.error} children={error} />
       )}
     </View>
   );
@@ -188,7 +175,7 @@ export function StatusBadge({ status }: { status: string }) {
 }
 const s = StyleSheet.create({
   screen: { flex: 1, padding: space.lg, backgroundColor: colors.background },
-  heading: { gap: space.xs, marginBottom: space.lg },
+  headingTitle: { marginBottom: space.xs },
   title: { ...type.page, color: colors.text },
   subtitle: { ...type.body, color: colors.textSecondary },
   card: {
@@ -197,7 +184,7 @@ const s = StyleSheet.create({
     padding: space.lg,
     gap: space.sm,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: colors.separator,
     ...shadow,
   },
   button: {
@@ -211,7 +198,7 @@ const s = StyleSheet.create({
   secondary: { backgroundColor: colors.secondary },
   outline: {
     backgroundColor: colors.surface,
-    borderWidth: 1.5,
+    borderWidth: 1,
     borderColor: colors.primary,
   },
   destructive: { backgroundColor: colors.error },

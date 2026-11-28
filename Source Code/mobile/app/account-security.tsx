@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { ScrollView, StyleSheet } from "react-native";
-import { AppButton, Card, Field, PageTitle } from "../src/components/ui";
+import { AppButton, Card, Field } from "../src/components/ui";
+import { ScaledText as Text } from "../src/components/ScaledText";
 import { useAuth } from "../src/context/Auth";
 import { useFeedback } from "../src/context/Feedback";
 import { api, errorMessage } from "../src/lib/api";
@@ -60,10 +61,7 @@ export default function AccountSecurity() {
   };
   return (
     <ScrollView contentContainerStyle={s.page}>
-      <PageTitle
-        title="Account security"
-        subtitle="Use your current password to make security changes."
-      />
+      <Text style={s.intro}>Use your current password to make security changes.</Text>
       <Card>
         <Field
           label="New email address"
@@ -124,4 +122,5 @@ const s = StyleSheet.create({
     gap: space.lg,
     backgroundColor: colors.background,
   },
+  intro: { color: colors.textSecondary },
 });

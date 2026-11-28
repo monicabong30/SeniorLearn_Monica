@@ -2,6 +2,7 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useRef, useState } from "react";
 import {
   KeyboardAvoidingView,
+  Image,
   Platform,
   Pressable,
   ScrollView,
@@ -15,6 +16,7 @@ import { canAdmin } from "../../src/lib/permissions";
 import { AppButton, Field } from "../../src/components/ui";
 import { colors, space, type } from "../../src/theme/tokens";
 import { ScaledText as Text } from "../../src/components/ScaledText";
+import logo from "../../assets/images/SeniorLearn_logo.png";
 export default function Login() {
   const [email, setEmail] = useState(""),
     [password, setPassword] = useState(""),
@@ -67,7 +69,10 @@ export default function Login() {
         contentContainerStyle={s.scroll}
       >
         <View style={s.hero}>
-          <Text style={s.brand}>SeniorLearn</Text>
+          <View style={s.brandRow}>
+            <Image source={logo} style={s.logo} />
+            <Text style={s.brand}>SeniorLearn</Text>
+          </View>
           <Text style={s.tagline}>Lifelong learning, made accessible.</Text>
         </View>
         <View style={s.form}>
@@ -136,6 +141,8 @@ const s = StyleSheet.create({
     alignSelf: "center",
   },
   hero: { gap: space.sm },
+  brandRow: { flexDirection: "row", alignItems: "center", gap: space.md },
+  logo: { width: 54, height: 54, borderRadius: 13 },
   brand: { ...type.display, color: colors.primary },
   tagline: { ...type.body, color: colors.textSecondary },
   form: {

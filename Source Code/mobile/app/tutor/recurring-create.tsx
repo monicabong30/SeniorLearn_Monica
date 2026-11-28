@@ -1,157 +1,48 @@
-import { ScaledText as Text } from "../../src/components/ScaledText";
-import { useCallback, useState } from "react";
+import { useMemo, useState } from "react";
+import { Pressable, StyleSheet, View } from "react-native";
 import { useRouter } from "expo-router";
-import { Alert, StyleSheet, View } from "react-native";
-import { useFeedback } from "../../src/context/Feedback";
-import { api } from "../../src/lib/api";
-import { AppButton, Card, Field, PageTitle } from "../../src/components/ui";
+import { ScaledText as Text } from "../../src/components/ScaledText";
+import { AppButton, Card, Field } from "../../src/components/ui";
 import { DatePickerField } from "../../src/components/DatePickerField";
 import { TimePickerField } from "../../src/components/TimePickerField";
+import { NumberInputField } from "../../src/components/NumberInputField";
+import { ConfirmationDialog } from "../../src/components/ConfirmationDialog";
 import { KeyboardAwareScrollView } from "../../src/components/KeyboardAwareScrollView";
-import { colors, space } from "../../src/theme/tokens";
+import { useFeedback } from "../../src/context/Feedback";
+import { api, errorMessage } from "../../src/lib/api";
+import { recurrenceEndDate, recurringDates, type RecurrenceFrequency } from "../../src/lib/recurrence";
+import { durationBetween, durationLabel, MINIMUM_CLASS_CAPACITY, validateClassForm } from "../../src/lib/scheduling";
+import { colors, space, type } from "../../src/theme/tokens";
 import { useFormSubmitState } from "../../src/hooks/useFormSubmitState";
-import {
-  durationBetween,
-  durationLabel,
-  validateClassForm,
-} from "../../src/lib/scheduling";
+import { useUnsavedChangesGuard } from "../../src/hooks/useUnsavedChangesGuard";
+
+type EndMode = "COUNT" | "DATE";
+type Form = { title:string; description:string; date:string; startTime:string; endTime:string; endDate:string; capacity:string; teamsLink:string; frequency:RecurrenceFrequency };
+const initial: Form = { title:"", description:"", date:"", startTime:"10:00", endTime:"11:00", endDate:"", capacity:"", teamsLink:"", frequency:"WEEKLY" };
+const readable = (date:string) => new Date(`${date}T12:00:00`).toLocaleDateString("en-AU", { weekday:"long", day:"numeric", month:"long", year:"numeric" });
+
 export default function RecurringCreate() {
-  const router = useRouter(),
-    { show } = useFeedback(),
-    [f, setF] = useState({
-      title: "",
-      description: "",
-      date: "2027-07-01",
-      startTime: "10:00",
-      endTime: "11:00",
-      endDate: "2027-08-01",
-      capacity: "12",
-      teamsLink: "https://teams.microsoft.com/l/meetup-join/example",
-      frequency: "WEEKLY",
-    }),
-    [errors, setErrors] = useState<Record<string, string>>({}),
-    [pending, setPending] = useState(false);
-  const set = (k: keyof typeof f, v: string) => {
-    setF({ ...f, [k]: v });
-    setErrors((e) => {
-      const n = { ...e };
-      delete n[k];
-      if (k === "startTime" || k === "endTime") delete n.endTime;
-      return n;
-    });
-  };
-  const validate=useCallback((values:typeof f)=>{const errors=validateClassForm(values);if(values.endDate<values.date)errors.endDate="Last date must be after first date.";return errors;},[]);
-  const form=useFormSubmitState({initialValues:f,values:f,validate,isSubmitting:pending,mode:"create"});
-  const save = async () => {
-    const validation = form.errors;
-    if (Object.keys(validation).length) {
-      setErrors(validation);
-      if (validation.endTime) Alert.alert("Invalid Class Time", "The end time must be later than the start time.", [{ text: "Change Time" }]);
-      return;
-    }
-    try {
-      setPending(true);
-      await api.post("/classes/recurring", {
-        ...f,
-        startsAt: new Date(`${f.date}T${f.startTime}:00`).toISOString(),
-        endDate: new Date(`${f.endDate}T23:59:59`).toISOString(),
-        capacity: Number(f.capacity),
-        durationMinutes: durationBetween(f.startTime, f.endTime),
-        delivery: "ONLINE",
-        status: "DRAFT",
-        weekdays: [],
-      });
-      show("SUCCESS", "Recurring classes created successfully.");
-      router.replace("/(tabs)/tutor");
-    } catch {
-      show("ERROR", "Unable to create recurring classes.");
-    } finally {
-      setPending(false);
-    }
-  };
-  const duration = durationBetween(f.startTime, f.endTime);
-  return (
-    <KeyboardAwareScrollView contentContainerStyle={s.page}>
-      <PageTitle
-        title="Create recurring classes"
-        subtitle="Choose a simple schedule. Each class starts as a draft."
-      />
-      <Card>
-        <Field
-          label="Class title"
-          value={f.title}
-          error={errors.title}
-          onChangeText={(v) => set("title", v)}
-        />
-        <Field
-          label="Description"
-          value={f.description}
-          error={errors.description}
-          onChangeText={(v) => set("description", v)}
-          multiline
-        />
-        <DatePickerField
-          label="First class date"
-          value={f.date}
-          error={errors.date}
-          onChange={(v) => set("date", v)}
-        />
-        <View style={s.times}><View style={s.timeField}><TimePickerField label="Start time" value={f.startTime} error={errors.startTime} onChange={(v) => set("startTime", v)} /></View><View style={s.timeField}><TimePickerField label="End time" value={f.endTime} error={errors.endTime || (duration <= 0 ? "End time must be later than start time." : undefined)} onChange={(v) => set("endTime", v)} /></View></View>
-        <Text style={s.duration}>
-          Duration —{" "}
-          {duration > 0 ? durationLabel(duration) : "Select a valid time range"}
-        </Text>
-        <DatePickerField
-          label="Last class date"
-          value={f.endDate}
-          error={errors.endDate}
-          onChange={(v) => set("endDate", v)}
-        />
-        <Field
-          label="Capacity"
-          error={errors.capacity}
-          keyboardType="number-pad"
-          value={f.capacity}
-          onChangeText={(v) => set("capacity", v)}
-        />
-      </Card>
-      <Text style={s.label}>
-        Repeats {f.frequency === "WEEKLY" ? "weekly" : "every two weeks"}
-      </Text>
-      <View style={s.options}>
-        <AppButton
-          label="Weekly"
-          variant={f.frequency === "WEEKLY" ? "primary" : "outline"}
-          onPress={() => set("frequency", "WEEKLY")}
-        />
-        <AppButton
-          label="Every two weeks"
-          variant={f.frequency === "BIWEEKLY" ? "primary" : "outline"}
-          onPress={() => set("frequency", "BIWEEKLY")}
-        />
-      </View>
-      <AppButton
-        label="Create recurring drafts"
-        loading={pending}
-        disabled={!form.canSubmit}
-        onPress={save}
-      />
-    </KeyboardAwareScrollView>
-  );
+  const router=useRouter(), {show}=useFeedback();
+  const [f,setF]=useState<Form>(initial), [endMode,setEndMode]=useState<EndMode>("COUNT"), [numberOfClasses,setNumberOfClasses]=useState("2"), [touched,setTouched]=useState<Record<string,boolean>>({}), [pending,setPending]=useState(false), [previewExpanded,setPreviewExpanded]=useState(false);
+  const requestedCount=/^\d+$/.test(numberOfClasses)?Number(numberOfClasses):0;
+  const calculatedEndDate=recurrenceEndDate(f.date,requestedCount,f.frequency);
+  const effectiveEndDate=endMode==="COUNT"?calculatedEndDate:f.endDate;
+  const dates=useMemo(()=>recurringDates(f.date,effectiveEndDate,f.frequency),[f.date,effectiveEndDate,f.frequency]);
+  const errors=useMemo(()=>{const next=validateClassForm(f);if(!f.teamsLink.trim())next.teamsLink="A Microsoft Teams link is required.";if(endMode==="COUNT"){if(!/^\d+$/.test(numberOfClasses)||requestedCount<2)next.numberOfClasses="Enter at least 2 classes.";else if(requestedCount>52)next.numberOfClasses="Choose no more than 52 classes."}else if(!f.endDate)next.endDate="Please select an end date.";else if(f.date&&f.endDate<f.date)next.endDate="End date must be on or after the first class date.";else if(f.date&&dates.length<2)next.endDate="Choose an end date that creates at least 2 classes.";if(dates.length>52)next[endMode==="COUNT"?"numberOfClasses":"endDate"]="Choose no more than 52 classes.";return next},[f,endMode,numberOfClasses,requestedCount,dates.length]);
+  const set=(key:keyof Form,value:string)=>{setF(current=>({...current,[key]:value}));setTouched(current=>({...current,[key]:true}))};
+  const setCount=(value:string)=>{setNumberOfClasses(value);setTouched(current=>({...current,numberOfClasses:true}))};
+  const error=(key:string)=>touched[key]?errors[key]:undefined;
+  const changeEndMode=(next:EndMode)=>{if(next===endMode)return;if(next==="DATE"&&calculatedEndDate)setF(current=>({...current,endDate:calculatedEndDate}));if(next==="COUNT"&&dates.length)setNumberOfClasses(String(dates.length));setEndMode(next)};
+  const duration=durationBetween(f.startTime,f.endTime);
+  const form=useFormSubmitState({initialValues:{f:initial,endMode:"COUNT" as EndMode,numberOfClasses:"2"},values:{f,endMode,numberOfClasses},validate:()=>({}),isSubmitting:pending,mode:"create"});
+  const navigationGuard=useUnsavedChangesGuard(form.isDirty,pending);
+  const save=async()=>{if(Object.keys(errors).length){setTouched({title:true,description:true,date:true,startTime:true,endTime:true,capacity:true,teamsLink:true,endDate:true,numberOfClasses:true});return}try{setPending(true);await api.post("/classes/recurring",{title:f.title.trim(),description:f.description.trim(),startsAt:new Date(`${f.date}T${f.startTime}:00`).toISOString(),endDate:new Date(`${effectiveEndDate}T23:59:59`).toISOString(),durationMinutes:duration,capacity:Number(f.capacity),delivery:"ONLINE",teamsLink:f.teamsLink.trim(),status:"DRAFT",frequency:f.frequency,weekdays:[]});show("SUCCESS",`${dates.length} recurring drafts created successfully.`,()=>router.replace("/(tabs)/tutor"))}catch(cause){show("ERROR",errorMessage(cause))}finally{setPending(false)}};
+  return <KeyboardAwareScrollView contentContainerStyle={s.page}>
+    <View style={s.section}><Text style={s.heading}>Class details</Text><Card style={s.card}><Field label="Class title" placeholder="e.g. Introduction to Digital Photography" value={f.title} error={error("title")} onChangeText={value=>set("title",value)}/><Field label="Description" placeholder="e.g. Learn basic photography skills" value={f.description} error={error("description")} onChangeText={value=>set("description",value)} multiline/><NumberInputField label="Maximum students per class" placeholder="e.g. 20" minimum={MINIMUM_CLASS_CAPACITY} required value={f.capacity} error={error("capacity")} onChangeText={value=>set("capacity",value)}/><Field label="Microsoft Teams link" placeholder="https://teams.microsoft.com/..." value={f.teamsLink} error={error("teamsLink")} onChangeText={value=>set("teamsLink",value)} autoCapitalize="none"/></Card></View>
+    <View style={s.section}><Text style={s.heading}>Class schedule</Text><Card style={s.card}><DatePickerField label="First class date" placeholder="DD/MM/YYYY" value={f.date} error={error("date")} onChange={value=>set("date",value)}/><View style={s.times}><View style={s.time}><TimePickerField label="Start time" placeholder="Select start time" value={f.startTime} error={error("startTime")} onChange={value=>set("startTime",value)}/></View><View style={s.time}><TimePickerField label="End time" placeholder="Select end time" value={f.endTime} error={error("endTime")} onChange={value=>set("endTime",value)}/></View></View><Text style={s.duration}>Duration: {duration>=15?durationLabel(duration):"Select a valid time range"}</Text></Card></View>
+    <View style={s.section}><Text style={s.heading}>Recurrence</Text><Card style={s.card}><Text style={s.label}>Repeat frequency</Text><View style={s.segment}><AppButton label="Weekly" variant={f.frequency==="WEEKLY"?"primary":"text"} onPress={()=>set("frequency","WEEKLY")}/><AppButton label="Every 2 weeks" variant={f.frequency==="BIWEEKLY"?"primary":"text"} onPress={()=>set("frequency","BIWEEKLY")}/></View><Text style={s.label}>Ends</Text><View style={s.endOptions}><Pressable accessibilityRole="radio" accessibilityLabel="End after a number of classes" accessibilityState={{selected:endMode==="COUNT"}} onPress={()=>changeEndMode("COUNT")} style={[s.endOption,endMode==="COUNT"&&s.endOptionSelected]}><View style={[s.radio,endMode==="COUNT"&&s.radioSelected]}>{endMode==="COUNT"?<View style={s.radioDot}/>:null}</View><Text style={s.endOptionText}>After a number of classes</Text></Pressable><Pressable accessibilityRole="radio" accessibilityLabel="End on a specific date" accessibilityState={{selected:endMode==="DATE"}} onPress={()=>changeEndMode("DATE")} style={[s.endOption,endMode==="DATE"&&s.endOptionSelected]}><View style={[s.radio,endMode==="DATE"&&s.radioSelected]}>{endMode==="DATE"?<View style={s.radioDot}/>:null}</View><Text style={s.endOptionText}>On a specific date</Text></Pressable></View>{endMode==="COUNT"?<><NumberInputField label="Number of classes" placeholder="e.g. 4" minimum={2} maximum={52} required value={numberOfClasses} error={error("numberOfClasses")} onChangeText={setCount}/><Text style={s.calculated}>Last class date: {calculatedEndDate?readable(calculatedEndDate):"Select a first class date"}</Text></>:<><DatePickerField label="End date" placeholder="DD/MM/YYYY" value={f.endDate} minimumDate={f.date||undefined} error={error("endDate")} onChange={value=>set("endDate",value)}/><Text style={s.calculated}>{dates.length?`${dates.length} classes will be created. Actual last class date: ${readable(dates[dates.length-1])}`:"Select dates to calculate the class count."}</Text></>}</Card></View>
+    <View style={s.section}><Text style={s.heading}>Schedule preview</Text><Card style={s.card}>{dates.length?<><Text style={s.count}>{dates.length} class{dates.length===1?"":"es"} will be created</Text><Text style={s.meta}>Actual last class date: {readable(dates[dates.length-1])}</Text>{dates.slice(0,previewExpanded?dates.length:4).map(date=><View key={date} style={s.preview}><Text>{readable(date)}</Text><Text style={s.meta}>{f.startTime} – {f.endTime}</Text></View>)}{dates.length>4?<Pressable accessibilityRole="button" accessibilityLabel={previewExpanded?"Show fewer scheduled classes":"Show all scheduled classes"} accessibilityState={{expanded:previewExpanded}} onPress={()=>setPreviewExpanded(value=>!value)} style={s.previewToggle}><Text style={s.previewToggleText}>{previewExpanded?"Show less":`Plus ${dates.length-4} more classes`}</Text></Pressable>:null}</>:<Text style={s.meta}>Complete the recurrence details to preview the schedule.</Text>}</Card></View>
+    <AppButton label={`Create ${dates.length||""} recurring draft${dates.length===1?"":"s"}`.replace("Create  recurring","Create recurring")} loading={pending} disabled={pending||Object.keys(errors).length>0} onPress={()=>void save()}/><AppButton label="Cancel" variant="outline" disabled={pending} onPress={()=>router.back()}/><ConfirmationDialog visible={navigationGuard.discardConfirmationVisible} title="Discard changes?" message="Your unsaved changes will be lost." confirmLabel="Discard changes" cancelLabel="Keep editing" variant="destructive" onDismiss={navigationGuard.keepEditing} onConfirm={navigationGuard.discard}/>
+  </KeyboardAwareScrollView>;
 }
-const s = StyleSheet.create({
-  page: {
-    flexGrow: 1,
-    width: "100%",
-    maxWidth: 760,
-    alignSelf: "center",
-    padding: space.lg,
-    gap: space.lg,
-    backgroundColor: colors.background,
-  },
-  label: { color: colors.text, fontWeight: "700" },
-  options: { gap: space.sm },
-  duration: { color: colors.primary, fontWeight: "700" },
-  times: { flexDirection: "row", gap: space.md, flexWrap: "wrap" },
-  timeField: { flexGrow: 1, flexBasis: 220 },
-});
+const s=StyleSheet.create({page:{flexGrow:1,width:"100%",maxWidth:760,alignSelf:"center",padding:space.lg,gap:space.xl,backgroundColor:colors.background},section:{gap:space.sm},heading:{...type.section,color:colors.text},card:{gap:space.md},times:{flexDirection:"row",gap:space.md,flexWrap:"wrap"},time:{flexGrow:1,flexBasis:220},duration:{...type.secondary,color:colors.primary,fontWeight:"700"},label:{...type.body,fontWeight:"700",color:colors.text},segment:{flexDirection:"row",gap:space.sm},endOptions:{gap:space.sm},endOption:{minHeight:48,flexDirection:"row",alignItems:"center",gap:space.sm,paddingHorizontal:space.md,borderWidth:1,borderColor:colors.border,borderRadius:12},endOptionSelected:{borderColor:colors.primary,backgroundColor:colors.secondary},endOptionText:{...type.body,color:colors.text},radio:{height:20,width:20,borderRadius:10,borderWidth:2,borderColor:colors.textSecondary,alignItems:"center",justifyContent:"center"},radioSelected:{borderColor:colors.primary},radioDot:{height:10,width:10,borderRadius:5,backgroundColor:colors.primary},calculated:{...type.secondary,color:colors.textSecondary},count:{...type.body,color:colors.primary,fontWeight:"700"},preview:{paddingVertical:space.sm,borderBottomWidth:1,borderBottomColor:colors.separator,gap:2},previewToggle:{minHeight:44,justifyContent:"center",alignSelf:"flex-start",paddingRight:space.md},previewToggleText:{...type.body,color:colors.primary,fontWeight:"600"},meta:{...type.secondary,color:colors.textSecondary}});

@@ -1,5 +1,4 @@
 import { Redirect, Stack, usePathname, useSegments } from "expo-router";
-import { ActivityIndicator, View } from "react-native";
 import { AuthProvider } from "../src/context/Auth";
 import { PreferencesProvider } from "../src/context/Preferences";
 import { FeedbackProvider } from "../src/context/Feedback";
@@ -7,14 +6,22 @@ import { useAuth } from "../src/context/Auth";
 import { canAdmin, canTutor } from "../src/lib/permissions";
 import { AdminBackButton } from "../src/components/AdminBackButton";
 import { AdminBottomNavigation } from "../src/components/BottomTabBar";
+import { MembershipBackButton } from "../src/components/MembershipBackButton";
+import { appHeaderOptions } from "../src/components/AppHeader";
+import { LoadingIndicator } from "../src/components/LoadingIndicator";
+import { PageHeaderBack, pageHeaderStyle } from "../src/components/PageHeader";
+
+const secondaryHeader = (title: string, fallback: string) => ({
+  ...pageHeaderStyle,
+  title,
+  headerLeft: () => <PageHeaderBack fallback={fallback} />,
+});
 
 function Guard({ children }: { children: React.ReactNode }) {
   const { user, ready, effectiveStatus } = useAuth(), segments = useSegments(), pathname = usePathname();
   if (!ready)
     return (
-      <View style={{ flex: 1, justifyContent: "center" }}>
-        <ActivityIndicator />
-      </View>
+      <LoadingIndicator variant="fill" accessibilityLabel="Checking your account" />
     );
   const top = segments[0],
     sub = (segments as string[])[1];
@@ -25,8 +32,10 @@ function Guard({ children }: { children: React.ReactNode }) {
       <Redirect href="/(auth)/login" />
     );
   if (top === "(auth)") return <Redirect href={canAdmin(user) ? "/(tabs)/admin" : "/(tabs)"} />;
-  const recoveryRoute = pathname === '/membership' || pathname === '/membership-expired' || pathname === '/personal-information' || pathname === '/account-security' || pathname === '/settings' || pathname === '/help';
-  if (!canAdmin(user) && ['EXPIRED','PENDING','SUSPENDED','MISSING','INVALID'].includes(effectiveStatus||'') && !recoveryRoute) return <Redirect href="/membership-expired" />;
+  // Pending and expired members may still browse, manage their account, and
+  // activate/renew membership. The API remains the authority for enrolment.
+  const recoveryRoute = pathname === '/membership' || pathname.startsWith('/payment/') || pathname === '/membership-expired' || pathname === '/payment-success' || pathname === '/payment-cancelled' || pathname === '/personal-information' || pathname === '/account-security' || pathname === '/settings' || pathname === '/help' || top === 'class' || top === '(tabs)';
+  if (!canAdmin(user) && ['EXPIRED','PENDING','SUSPENDED','MISSING','INVALID'].includes(effectiveStatus||'') && !recoveryRoute) return <Redirect href="/membership" />;
   if (
     (top === "tutor" || (top === "(tabs)" && sub === "tutor")) &&
     !canTutor(user)
@@ -67,32 +76,31 @@ export default function Root() {
                 options={{ headerShown: false }}
               />
               <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-              <Stack.Screen
-                name="class/[id]"
-                options={{ title: "Class Details" }}
-              />
-              <Stack.Screen name="bulletin/[id]" options={{ title: "Bulletin Details" }} />
-              <Stack.Screen name="notification/[id]" options={{ title: "Alert Details" }} />
-              <Stack.Screen name="history/[id]" options={{ title: "Learning History" }} />
+              <Stack.Screen name="class/[id]" options={secondaryHeader("Class details", "/(tabs)")} />
+              <Stack.Screen name="recurring/[seriesId]" options={{ ...secondaryHeader("", "/(tabs)/tutor"), headerTitle: () => null }} />
+              <Stack.Screen name="bulletin/[id]" options={secondaryHeader("Bulletin details", "/(tabs)/bulletins")} />
+              <Stack.Screen name="notification/[id]" options={secondaryHeader("Alert details", "/(tabs)/notifications")} />
+              <Stack.Screen name="history/[id]" options={{ headerTitle: () => null }} />
               <Stack.Screen
                 name="tutor/create"
-                options={{ title: "Create Class" }}
+                options={secondaryHeader("Create class", "/(tabs)/tutor")}
               />
               <Stack.Screen
                 name="tutor/edit"
-                options={{ title: "Edit Class" }}
+                options={{ headerTitle: () => null }}
               />
               <Stack.Screen
                 name="tutor/recurring"
-                options={{ title: "Recurring Classes" }}
+                options={{ headerTitle: () => null }}
               />
+              <Stack.Screen name="tutor/recurring/[seriesId]" options={secondaryHeader("Recurring classes", "/(tabs)/tutor")} />
               <Stack.Screen
                 name="tutor/recurring-create"
-                options={{ title: "Create Recurring Classes" }}
+                options={secondaryHeader("Create recurring classes", "/(tabs)/tutor")}
               />
               <Stack.Screen
                 name="tutor/roster"
-                options={{ title: "Enrollment Roster" }}
+                options={secondaryHeader("Enrollment roster", "/(tabs)/tutor")}
               />
               <Stack.Screen
                 name="admin/member"
@@ -106,23 +114,26 @@ export default function Root() {
                   ),
                 }}
               />
-              <Stack.Screen name="admin/members" options={{ title: "Manage Members", headerBackVisible: false }} />
-              <Stack.Screen name="admin/classes" options={{ title: "Manage Classes", headerBackVisible: false }} />
+              <Stack.Screen name="admin/members" options={{ ...appHeaderOptions, headerBackVisible: false, headerLeft: () => null }} />
+              <Stack.Screen name="admin/classes" options={{ ...appHeaderOptions, headerBackVisible: false, headerLeft: () => null }} />
               <Stack.Screen name="admin/class" options={{ headerTitle: () => null, headerLeft: () => <AdminBackButton label="Manage Classes" fallback="/admin/classes" /> }} />
-              <Stack.Screen name="admin/edit-member" options={{ title: "Edit Member", headerLeft: () => <AdminBackButton label="Member Details" fallback={(params) => ({ pathname: "/admin/member", params: { id: params.id } })} /> }} />
-              <Stack.Screen name="admin/bulletins" options={{ title: "Manage Bulletins", headerBackVisible: false }} />
-              <Stack.Screen name="admin/create-bulletin" options={{ title: "Create Bulletin", headerLeft: () => <AdminBackButton label="Manage Bulletins" fallback="/admin/bulletins" /> }} />
-              <Stack.Screen name="settings" options={{ title: "Settings" }} />
+              <Stack.Screen name="admin/edit-member" options={{ headerTitle: () => null, headerLeft: () => <AdminBackButton label="Member Details" fallback={(params) => ({ pathname: "/admin/member", params: { id: params.id } })} /> }} />
+              <Stack.Screen name="admin/bulletins" options={{ ...appHeaderOptions, headerBackVisible: false, headerLeft: () => null }} />
+              <Stack.Screen name="admin/create-bulletin" options={secondaryHeader("Create bulletin", "/admin/bulletins")} />
+              <Stack.Screen name="settings" options={secondaryHeader("Settings", "/(tabs)/profile")} />
               <Stack.Screen
                 name="personal-information"
-                options={{ title: "Personal Information" }}
+                options={secondaryHeader("Personal information", "/(tabs)/profile")}
               />
               <Stack.Screen
                 name="account-security"
-                options={{ title: "Account Security" }}
+                options={secondaryHeader("Account security", "/(tabs)/profile")}
               />
-              <Stack.Screen name="membership" options={{ title: "Membership Renewal" }} />
-              <Stack.Screen name="membership-expired" options={{ headerShown: false }} />
+              <Stack.Screen name="membership" options={{ title: "Membership", headerLeft: () => <MembershipBackButton /> }} />
+              <Stack.Screen name="payment/[id]" options={{ headerTitle: () => null }} />
+              <Stack.Screen name="payment-success" options={{ title: "Payment status", headerBackVisible: false }} />
+              <Stack.Screen name="payment-cancelled" options={{ title: "Payment status", headerBackVisible: false }} />
+              <Stack.Screen name="membership-expired" options={{ title: "Membership", headerLeft: () => <MembershipBackButton /> }} />
             </Stack>
           </Guard>
         </FeedbackProvider>

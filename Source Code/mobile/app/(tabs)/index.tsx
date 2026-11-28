@@ -4,7 +4,6 @@ import { useFocusEffect } from "expo-router";
 import {
   ActivityIndicator,
   FlatList,
-  Modal,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -12,7 +11,10 @@ import {
   View,
 } from "react-native";
 import { api } from "../../src/lib/api";
+import { useFeedback } from "../../src/context/Feedback";
 import { ClassCard } from "../../src/components/ClassCard";
+import { RecurringClassCard } from "../../src/components/RecurringClassCard";
+import { AnchoredDropdown } from "../../src/components/AnchoredDropdown";
 import { Field, PageTitle } from "../../src/components/ui";
 import { colors, space, type } from "../../src/theme/tokens";
 import {
@@ -25,12 +27,14 @@ const filters: ClassFilter[] = [
   "Available",
   "Enrolled",
   "Favourites",
+  "Past classes",
   "Not Available",
 ];
 const labels: Record<ClassSort, string> = {
-  Earliest: "Earliest date",
-  Latest: "Latest date",
-  Title: "Title A–Z",
+  Upcoming: "Upcoming classes first",
+  Furthest: "Furthest date first",
+  TitleAsc: "Class name (A–Z)",
+  TitleDesc: "Class name (Z–A)",
 };
 export default function Classes() {
   const [items, setItems] = useState<any[]>([]),
@@ -38,20 +42,27 @@ export default function Classes() {
     [favourites, setFavourites] = useState<any[]>([]),
     [search, setSearch] = useState(""),
     [filter, setFilter] = useState<ClassFilter>("All"),
-    [sort, setSort] = useState<ClassSort>("Earliest"),
-    [open, setOpen] = useState(false),
+    [sort, setSort] = useState<ClassSort>("Upcoming"),
     [loading, setLoading] = useState(true);
+  const { show } = useFeedback();
   const load = async () => {
     setLoading(true);
     try {
-      const [c, e, f] = await Promise.all([
-        api.get("/classes", { params: { search } }),
+      const c = await api.get("/classes", { params: { search } });
+      const [e, f] = await Promise.allSettled([
         api.get("/enrollments"),
         api.get("/favourites"),
       ]);
       setItems(c.data);
-      setEnrollments(e.data);
-      setFavourites(f.data);
+      // Pending and expired members can browse, but cannot access their
+      // enrolment or favourite data until membership is active.
+      setEnrollments(e.status === "fulfilled" ? e.value.data : []);
+      setFavourites(f.status === "fulfilled" ? f.value.data : []);
+    } catch {
+      setItems([]);
+      setEnrollments([]);
+      setFavourites([]);
+      show("ERROR", "Unable to load classes. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -59,12 +70,13 @@ export default function Classes() {
   useFocusEffect(
     useCallback(() => {
       void load();
-    }, [search]),
+    }, [search, show]),
   );
   const shown = useMemo(
     () => filterAndSortClasses(items, enrollments, favourites, filter, sort),
     [items, enrollments, favourites, filter, sort],
   );
+  const cards=useMemo(()=>{const singles=shown.filter((item:any)=>!item.recurrenceSeriesId), groups=new Map<string,any[]>(); shown.filter((item:any)=>item.recurrenceSeriesId).forEach((item:any)=>groups.set(item.recurrenceSeriesId,[...(groups.get(item.recurrenceSeriesId)||[]),item])); return [...singles,...[...groups.values()].map(items=>({kind:'SERIES',_id:`series:${items[0].recurrenceSeriesId}`,items}))];},[shown]);
   const header = (
     <View style={s.header}>
       <PageTitle
@@ -74,7 +86,7 @@ export default function Classes() {
       <View>
         <Field
           label="Search classes"
-          placeholder="Try computers, art or wellbeing"
+          placeholder="Search classes..."
           value={search}
           onChangeText={setSearch}
         />
@@ -115,24 +127,14 @@ export default function Classes() {
         <Text style={s.sortLabel}>
           Sort by:
         </Text>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={`Sort by ${labels[sort]}`}
-          accessibilityState={{ expanded: open }}
-          onPress={() => setOpen(true)}
-          style={s.select}
-        >
-          <Text style={s.selectText}>
-            {labels[sort]} ⌄
-          </Text>
-        </Pressable>
+        <AnchoredDropdown label="Sort classes" value={sort} options={(Object.keys(labels) as ClassSort[]).map(value => ({ value, label: labels[value] }))} onChange={setSort} />
       </View>
-      {(filter !== "All" || sort !== "Earliest") && (
+      {(filter !== "All" || sort !== "Upcoming") && (
         <Pressable
           accessibilityRole="button"
           onPress={() => {
             setFilter("All");
-            setSort("Earliest");
+            setSort("Upcoming");
           }}
           style={s.clear}
         >
@@ -147,11 +149,9 @@ export default function Classes() {
         style={s.page}
         contentContainerStyle={s.list}
         ListHeaderComponent={header}
-        data={shown}
+        data={cards}
         keyExtractor={(x) => x._id}
-        renderItem={({ item }) => (
-          <ClassCard item={item} enrollments={enrollments} />
-        )}
+        renderItem={({ item }:any) => item.kind==='SERIES'?<RecurringClassCard items={item.items} enrollments={enrollments}/>:<ClassCard item={item} enrollments={enrollments} />}
         ItemSeparatorComponent={() => <View style={s.separator} />}
         ListEmptyComponent={
           loading ? (
@@ -174,38 +174,6 @@ export default function Classes() {
           />
         }
       />
-      <Modal
-        transparent
-        visible={open}
-        animationType="fade"
-        onRequestClose={() => setOpen(false)}
-      >
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Close sort options"
-          onPress={() => setOpen(false)}
-          style={s.overlay}
-        >
-          <View style={s.menu}>
-            {(["Earliest", "Latest", "Title"] as ClassSort[]).map((x) => (
-              <Pressable
-                key={x}
-                accessibilityRole="menuitem"
-                accessibilityState={{ selected: sort === x }}
-                onPress={() => {
-                  setSort(x);
-                  setOpen(false);
-                }}
-                style={[s.option, sort === x && s.optionOn]}
-              >
-                <Text style={[s.optionText, sort === x && s.optionTextOn]}>
-                  {labels[x]}
-                </Text>
-              </Pressable>
-            ))}
-          </View>
-        </Pressable>
-      </Modal>
     </>
   );
 }
@@ -230,16 +198,6 @@ const s = StyleSheet.create({
   chipTextOn: { color: "#fff" },
   sortRow: { flexDirection: "row", alignItems: "center", gap: space.sm },
   sortLabel: { fontWeight: "700", color: colors.text },
-  select: {
-    minHeight: 44,
-    paddingHorizontal: space.md,
-    justifyContent: "center",
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 12,
-    backgroundColor: colors.surface,
-  },
-  selectText: { color: colors.primary, fontWeight: "700" },
   separator: { height: space.md },
   state: { padding: space.xxxl, alignItems: "center", gap: space.sm },
   emptyTitle: { ...type.section, color: colors.primary },
@@ -250,28 +208,4 @@ const s = StyleSheet.create({
     paddingHorizontal: 8,
   },
   clearText: { color: colors.primary, fontWeight: "700" },
-  overlay: {
-    flex: 1,
-    justifyContent: "center",
-    padding: space.xl,
-    backgroundColor: "#0005",
-  },
-  menu: {
-    backgroundColor: colors.surface,
-    borderRadius: 20,
-    padding: space.sm,
-    maxWidth: 420,
-    width: "100%",
-    alignSelf: "center",
-    gap: space.xs,
-  },
-  option: {
-    minHeight: 48,
-    justifyContent: "center",
-    paddingHorizontal: space.md,
-    borderRadius: 10,
-  },
-  optionOn: { backgroundColor: "#e8eff5" },
-  optionText: { color: colors.text },
-  optionTextOn: { color: colors.primary, fontWeight: "700" },
 });

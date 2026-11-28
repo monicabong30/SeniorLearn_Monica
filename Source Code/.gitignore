@@ -4,9 +4,19 @@ node_modules.*/
 .env.*
 !.env.example
 !.env.test.example
+# Never commit local CA/server private material. The public CA asset under
+# mobile/assets/certs/ is intentionally tracked for the Android EAS build.
+backend/certs/*.key
+backend/certs/*.crt
+backend/certs/*.pfx
+backend/certs/*.p12
+backend/certs/*.csr
+backend/certs/*.srl
+backend/certs/private/
 docs/DEMO_ACCOUNTS.local.md
 .expo/
 dist/
+build-output/
 coverage/
 *.log
 *.tmp
@@ -15,6 +25,7 @@ coverage/
 *.old
 *.backup
 logs/
+backend/backups/
 *-verify-output.log
 *-verify-error.log
 node_modules.install-failed-*/

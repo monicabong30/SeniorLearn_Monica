@@ -27,7 +27,8 @@ export default function Favourites() {
   const load = async () => {
     try {
       setLoading(true);
-      setRows((await api.get("/favourites")).data);
+      const { data } = await api.get("/favourites");
+      setRows(Array.isArray(data) ? data : []);
     } catch {
       show("ERROR", "Unable to update Favourites.");
     } finally {

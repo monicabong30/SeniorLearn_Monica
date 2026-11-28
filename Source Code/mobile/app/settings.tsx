@@ -3,7 +3,7 @@ import Slider from "@react-native-community/slider";
 import { Modal, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { usePreferences } from "../src/context/Preferences";
 import { useFeedback } from "../src/context/Feedback";
-import { AppButton, Card, PageTitle } from "../src/components/ui";
+import { AppButton, Card } from "../src/components/ui";
 import { colors, space, type } from "../src/theme/tokens";
 import {
   TEXT_SCALE_MAX,
@@ -26,10 +26,7 @@ export default function Settings() {
   };
   return (
     <ScrollView contentContainerStyle={s.page}>
-      <PageTitle
-        title="Settings"
-        subtitle="Make SeniorLearn comfortable to use on this device."
-      />
+      <Text style={s.intro}>Make SeniorLearn comfortable to use on this device.</Text>
       <Text style={s.group}>Preferences</Text>
       <Card>
         <Text style={s.heading}>Text size</Text>
@@ -103,6 +100,7 @@ const s = StyleSheet.create({
     backgroundColor: colors.background,
   },
   group: { ...type.caption, color: colors.textSecondary, fontWeight: "700", textTransform: "uppercase", letterSpacing: .5, marginLeft: space.sm },
+  intro: { ...type.secondary, color: colors.textSecondary },
   heading: { ...type.body, fontWeight: "700", color: colors.text },
   slider: { flexDirection: "row", alignItems: "center", gap: 8 },
   overlay: {

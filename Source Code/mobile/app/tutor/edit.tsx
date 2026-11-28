@@ -1,20 +1,21 @@
 import { ScaledText as Text } from "../../src/components/ScaledText";
 import { useCallback, useEffect, useState } from "react";
-import { useLocalSearchParams, useRouter } from "expo-router";
-import { ActivityIndicator, Alert, StyleSheet, View } from "react-native";
+import { Stack, useLocalSearchParams, useRouter } from "expo-router";
+import { ActivityIndicator, Alert, Modal, Pressable, StyleSheet, View } from "react-native";
 import { useAuth } from "../../src/context/Auth";
 import { canAdmin } from '../../src/lib/permissions';
 import { useFeedback } from "../../src/context/Feedback";
 import { api, errorMessage } from "../../src/lib/api";
-import { AppButton, Card, Field, PageTitle } from "../../src/components/ui";
-import { DatePickerField } from "../../src/components/DatePickerField";
-import { TimePickerField } from "../../src/components/TimePickerField";
+import { AppButton, PageTitle } from "../../src/components/ui";
+import { ClassForm } from "../../src/components/ClassForm";
+import { AdminBackButton } from "../../src/components/AdminBackButton";
+import { ConfirmationDialog } from "../../src/components/ConfirmationDialog";
 import { KeyboardAwareScrollView } from "../../src/components/KeyboardAwareScrollView";
 import { colors, space } from "../../src/theme/tokens";
 import { useFormSubmitState } from "../../src/hooks/useFormSubmitState";
+import { useUnsavedChangesGuard } from "../../src/hooks/useUnsavedChangesGuard";
 import {
   durationBetween,
-  durationLabel,
   validateClassForm,
 } from "../../src/lib/scheduling";
 const datePart = (iso: string) => {
@@ -31,14 +32,18 @@ const datePart = (iso: string) => {
     return `${String(Math.floor(v / 60)).padStart(2, "0")}:${String(v % 60).padStart(2, "0")}`;
   };
 export default function EditClass() {
-  const { id } = useLocalSearchParams<{ id: string }>(),
+  const { id, from, seriesId } = useLocalSearchParams<{ id: string; from?: string; seriesId?: string }>(),
     router = useRouter(),
     { user } = useAuth(),
     { show } = useFeedback(),
     [f, setF] = useState<any>(),
     [initial, setInitial] = useState<any>(),
     [errors, setErrors] = useState<Record<string, string>>({}),
-    [pending, setPending] = useState(false);
+    [pending, setPending] = useState(false),
+    [scopeOpen, setScopeOpen] = useState(false),
+    [scope, setScope] = useState<"SINGLE" | "FUTURE" | "ALL">("SINGLE"),
+    [cancelScopeOpen, setCancelScopeOpen] = useState(false),
+    [cancelOpen, setCancelOpen] = useState(false);
   useEffect(() => {
     void api
       .get(`/classes/${id}`)
@@ -57,9 +62,10 @@ export default function EditClass() {
       })
       .catch(() => show("ERROR", "You cannot edit this class."));
   }, [id, user?.id, user?.isAdmin]);
-  const emptyForm={title:"",description:"",date:"",startTime:"",endTime:"",capacity:"",teamsLink:""};
+  const emptyForm={title:"",description:"",date:"",startTime:"",endTime:"",capacity:"",delivery:"ONLINE" as const,teamsLink:"",address:""};
   const validate=useCallback((values:any)=>validateClassForm(values),[]);
-  const form=useFormSubmitState({initialValues:initial||f||emptyForm,values:f||emptyForm,validate,isSubmitting:pending,mode:"edit",normalize:(v:any)=>({title:v.title.trim(),description:v.description.trim(),date:v.date,startTime:v.startTime,endTime:v.endTime,capacity:String(v.capacity).trim(),teamsLink:String(v.teamsLink||"").trim()})});
+  const form=useFormSubmitState({initialValues:initial||f||emptyForm,values:f||emptyForm,validate,isSubmitting:pending,mode:"edit",normalize:(v:any)=>({title:v.title.trim(),description:v.description.trim(),date:v.date,startTime:v.startTime,endTime:v.endTime,capacity:String(v.capacity).trim(),delivery:v.delivery||"ONLINE",teamsLink:String(v.teamsLink||"").trim(),address:String(v.address||"").trim()})});
+  const navigationGuard=useUnsavedChangesGuard(form.isDirty,pending);
   if (!f)
     return (
       <View style={s.center}>
@@ -67,12 +73,13 @@ export default function EditClass() {
         <Text>Loading class…</Text>
       </View>
     );
-  const set = (k: string, v: string) => {
+  const set = (k: any, v: string) => {
     setF((current:any)=>({ ...current, [k]: v }));
     setErrors((e) => {
       const n = { ...e };
       delete n[k];
       if (k === "startTime" || k === "endTime") delete n.endTime;
+      if (k === "delivery") { delete n.teamsLink; delete n.address; }
       return n;
     });
   };
@@ -98,10 +105,12 @@ export default function EditClass() {
         ...(f.teamsLink?.trim() ? { teamsLink: f.teamsLink.trim() } : {}),
         ...(f.address?.trim() ? { address: f.address.trim() } : {}),
       };
-      await api.put(`/classes/${id}`, patch);
+      if (f.recurrenceSeriesId) await api.put(`/recurrences/${f.recurrenceSeriesId}/${id}`, { ...patch, scope });
+      else await api.put(`/classes/${id}`, patch);
       setInitial(f);
       show("SUCCESS", "Class updated successfully.");
-      if (router.canGoBack()) router.back();
+      if (seriesId) router.replace({ pathname: "/tutor/recurring/[seriesId]", params: { seriesId } });
+      else if (router.canGoBack()) router.back();
       else router.replace("/(tabs)/tutor");
     } catch (error) {
       show("ERROR", errorMessage(error));
@@ -109,55 +118,31 @@ export default function EditClass() {
       setPending(false);
     }
   };
-  const duration = durationBetween(f.startTime, f.endTime);
+  const cancel = async () => {
+    try { setPending(true); await api.post(`/recurrences/${f.recurrenceSeriesId}/${id}/cancel`, { scope }); show("SUCCESS", "Classes cancelled successfully."); setCancelOpen(false); if (seriesId) router.replace({ pathname: "/tutor/recurring/[seriesId]", params: { seriesId } }); else router.back(); }
+    catch (error) { show("ERROR", errorMessage(error)); } finally { setPending(false); }
+  };
   return (
     <KeyboardAwareScrollView contentContainerStyle={s.page}>
-      <PageTitle
-        title="Edit class"
-        subtitle="Update the details learners will see."
-      />
-      <Card>
-        <Field
-          label="Class title"
-          value={f.title}
-          error={errors.title}
-          onChangeText={(v) => set("title", v)}
-        />
-        <Field
-          label="Description"
-          value={f.description}
-          error={errors.description}
-          onChangeText={(v) => set("description", v)}
-          multiline
-        />
-        <DatePickerField
-          label="Class date"
-          value={f.date}
-          error={errors.date}
-          onChange={(v) => set("date", v)}
-        />
-          <View style={s.times}><View style={s.timeField}><TimePickerField label="Start time" value={f.startTime} error={errors.startTime} onChange={(v) => set("startTime", v)} /></View><View style={s.timeField}><TimePickerField label="End time" value={f.endTime} error={errors.endTime || (duration <= 0 ? "End time must be later than start time." : undefined)} onChange={(v) => set("endTime", v)} /></View></View>
-        <Text style={s.duration}>
-          Duration —{" "}
-          {duration > 0 ? durationLabel(duration) : "Select a valid time range"}
-        </Text>
-        <Field
-          label="Capacity"
-          error={errors.capacity}
-          keyboardType="number-pad"
-          value={String(f.capacity || "")}
-          onChangeText={(v) => set("capacity", v)}
-        />
-        <Field
-          label="Microsoft Teams link"
-          error={errors.teamsLink}
-          value={String(f.teamsLink || "")}
-          onChangeText={(v) => set("teamsLink", v)}
-        />
-      </Card>
-      {!form.isDirty&&!pending&&<Text>Make a change to enable Save changes.</Text>}<AppButton label="Save changes" loading={pending} disabled={!form.canSubmit} onPress={save} />
+      {from === "admin" ? <Stack.Screen options={{
+        headerTitle: () => null,
+        headerLeft: () => <AdminBackButton label="Back" fallback={() => ({ pathname: "/admin/class", params: { id } })} />,
+      }} /> : null}
+      <PageTitle title="Edit class" />
+      <ClassForm values={f} errors={errors} onChange={set}/>
+      <AppButton label="Save changes" loading={pending} disabled={!form.canSubmit} onPress={() => f.recurrenceSeriesId ? setScopeOpen(true) : void save()} />
+      {f.recurrenceSeriesId && !["CANCELLED", "COMPLETE"].includes(f.status) ? <AppButton label="Cancel class" variant="destructive" disabled={pending} onPress={() => setCancelScopeOpen(true)} /> : null}
+      <AppButton label="Cancel" variant="outline" disabled={pending} onPress={()=>router.back()}/>
+      <ScopeModal visible={scopeOpen} scope={scope} pending={pending} onScope={setScope} onDismiss={() => setScopeOpen(false)} onSave={() => { setScopeOpen(false); void save(); }} />
+      <ScopeModal visible={cancelScopeOpen} title="Cancel classes in" actionLabel="Continue" scope={scope} pending={pending} onScope={setScope} onDismiss={() => setCancelScopeOpen(false)} onSave={() => { setCancelScopeOpen(false); setCancelOpen(true); }} />
+      <ConfirmationDialog visible={cancelOpen} title={scope === "SINGLE" ? "Cancel class?" : "Cancel classes?"} message={`This will cancel ${scope === "SINGLE" ? "this class only" : scope === "FUTURE" ? "this class and future classes" : "all eligible classes in this series"}. Enrolled members will be notified.`} safeLabel="Keep classes" destructiveLabel={scope === "SINGLE" ? "Cancel Class" : "Cancel Classes"} loading={pending} onDismiss={() => setCancelOpen(false)} onConfirm={() => void cancel()} />
+      <ConfirmationDialog visible={navigationGuard.discardConfirmationVisible} title="Discard changes?" message="Your unsaved changes will be lost." confirmLabel="Discard changes" cancelLabel="Keep editing" variant="destructive" onDismiss={navigationGuard.keepEditing} onConfirm={navigationGuard.discard}/>
     </KeyboardAwareScrollView>
   );
+}
+function ScopeModal({ visible, title = "Apply changes to", actionLabel = "Save Changes", scope, pending, onScope, onDismiss, onSave }: { visible: boolean; title?: string; actionLabel?: string; scope: "SINGLE" | "FUTURE" | "ALL"; pending: boolean; onScope: (scope: "SINGLE" | "FUTURE" | "ALL") => void; onDismiss: () => void; onSave: () => void }) {
+  const options: ["SINGLE" | "FUTURE" | "ALL", string][] = [["SINGLE", "This class only"], ["FUTURE", "This and future classes"], ["ALL", "All classes in this series"]];
+  return <Modal transparent visible={visible} animationType="fade" onRequestClose={onDismiss}><View style={s.overlay}><View style={s.modal}><Text accessibilityRole="header" style={s.modalTitle}>{title}</Text>{options.map(([value, label]) => <Pressable key={value} accessibilityRole="radio" accessibilityState={{ selected: scope === value }} disabled={pending} onPress={() => onScope(value)} style={s.scope}><View style={[s.radio, scope === value && s.radioSelected]}>{scope === value ? <View style={s.dot} /> : null}</View><Text>{label}</Text></Pressable>)}<AppButton label={actionLabel} loading={pending} onPress={onSave}/><AppButton label="Cancel" variant="outline" disabled={pending} onPress={onDismiss}/></View></View></Modal>;
 }
 const s = StyleSheet.create({
   page: {
@@ -175,7 +160,10 @@ const s = StyleSheet.create({
     justifyContent: "center",
     gap: space.md,
   },
-  duration: { color: colors.primary, fontWeight: "700" },
-  times: { flexDirection: "row", gap: space.md, flexWrap: "wrap" },
-  timeField: { flexGrow: 1, flexBasis: 220 },
+  overlay: { flex: 1, justifyContent: "center", padding: space.lg, backgroundColor: "rgba(0,0,0,.35)" },
+  modal: { backgroundColor: colors.surface, borderRadius: 16, padding: space.lg, gap: space.md, maxWidth: 460, width: "100%", alignSelf: "center" },
+  modalTitle: { fontSize: 20, fontWeight: "700", color: colors.primary },
+  scope: { minHeight: 48, flexDirection: "row", alignItems: "center", gap: space.sm },
+  radio: { width: 20, height: 20, borderRadius: 10, borderWidth: 2, borderColor: colors.textSecondary, alignItems: "center", justifyContent: "center" },
+  radioSelected: { borderColor: colors.primary }, dot: { width: 10, height: 10, borderRadius: 5, backgroundColor: colors.primary },
 });

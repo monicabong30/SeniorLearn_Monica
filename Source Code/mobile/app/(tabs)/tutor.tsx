@@ -4,6 +4,7 @@ import {
   FlatList,
   Modal,
   Pressable,
+  ScrollView,
   StyleSheet,
   useWindowDimensions,
   View,
@@ -21,6 +22,13 @@ import {
 import { colors, space, type } from "../../src/theme/tokens";
 import { canTutor } from '../../src/lib/permissions';
 import { ConfirmationDialog } from "../../src/components/ConfirmationDialog";
+import { LoadingIndicator } from "../../src/components/LoadingIndicator";
+import { groupTutorClasses, seriesStatusSummary, type ClassTypeFilter } from "../../src/lib/tutorClassGrouping";
+const statusFilters = ["ALL", "DRAFT", "SCHEDULED", "CLOSED", "COMPLETE", "CANCELLED"] as const;
+const classTypeFilters: { value:ClassTypeFilter; label:string }[] = [{ value:"ALL", label:"All Classes" }, { value:"SINGLE", label:"Single Classes" }, { value:"RECURRING", label:"Recurring Classes" }];
+type StatusFilter = (typeof statusFilters)[number];
+const statusLabel = (status: StatusFilter) => status === "ALL" ? "All" : status[0] + status.slice(1).toLowerCase();
+const emptyMessage = (type:ClassTypeFilter, status: StatusFilter) => status !== "ALL" ? `No ${status.toLowerCase()} classes.` : type === "RECURRING" ? "No recurring classes." : type === "SINGLE" ? "No single classes." : "No classes created yet.";
 const schedule = (item: any) => {
   const start = new Date(item.startsAt),
     end = new Date(start.getTime() + item.durationMinutes * 60000);
@@ -39,6 +47,9 @@ export default function Tutor() {
     router = useRouter(),
     { width } = useWindowDimensions(),
     [items, setItems] = useState<any[]>([]),
+    [classTypeFilter, setClassTypeFilter] = useState<ClassTypeFilter>("ALL"),
+    [statusFilter, setStatusFilter] = useState<StatusFilter>("ALL"),
+    [loading, setLoading] = useState(true),
     [pending, setPending] = useState<string | null>(null),
     [menu, setMenu] = useState<any>(),
     [cancelConfirmation, setCancelConfirmation] = useState<any>(),
@@ -46,6 +57,7 @@ export default function Tutor() {
     wide = width >= 760;
   const load = async () => {
     try {
+      setLoading(true);
       const rows = (await api.get("/classes", { params: { mine: "true" } }))
         .data;
       const withCounts = await Promise.all(
@@ -64,6 +76,8 @@ export default function Tutor() {
       setItems(withCounts);
     } catch {
       show("ERROR", "Unable to load classes.");
+    } finally {
+      setLoading(false);
     }
   };
   useFocusEffect(
@@ -77,6 +91,7 @@ export default function Tutor() {
         <Text>Professional member access is required.</Text>
       </View>
     );
+  const visibleItems = groupTutorClasses(items, classTypeFilter, statusFilter);
   const action = async (item: any, kind: "publish" | "cancel") => {
     setMenu(undefined);
     if (kind === "cancel") {
@@ -104,6 +119,12 @@ export default function Tutor() {
     }
   };
   const card = ({ item }: any) => {
+    if (item.kind === "SERIES") {
+      const first = item.items[0], last = item.items[item.items.length - 1], summary = seriesStatusSummary(item.items);
+      const times = new Set<string>(item.items.map((row:any) => schedule(row).time)), capacities = new Set<number>(item.items.map((row:any) => row.capacity));
+      const gap = item.items.length > 1 ? Math.round((+new Date(item.items[1].startsAt) - +new Date(first.startsAt)) / 86400000) : 7;
+      return <Pressable accessibilityRole="link" accessibilityLabel={`View ${first.title} recurring classes`} onPress={() => router.push({ pathname:"/tutor/recurring/[seriesId]", params:{ seriesId:item.seriesId } })}><Card style={s.card}><View style={s.cardTop}><View style={s.cardTitle}><Text style={s.title}>{first.title}</Text><View style={s.recurring}><Text style={s.repeat}>↻</Text><Text style={s.recurringText}>Recurring class</Text></View><StatusBadge status={summary || 'DRAFT'} /></View><Text style={s.chevron}>›</Text></View><Text style={s.meta}>{gap === 14 ? "Every 2 weeks" : "Weekly"}</Text><Text style={s.meta}>{new Date(first.startsAt).toLocaleDateString("en-AU")} – {new Date(last.startsAt).toLocaleDateString("en-AU")}</Text><Text style={s.meta}>{times.size === 1 ? [...times][0] : "Various times"}</Text><Text style={s.meta}>{item.items.length} classes · {capacities.size === 1 ? `${first.capacity} seats per class` : "various capacities"}</Text><Text style={s.detailsText}>View Classes →</Text></Card></Pressable>;
+    }
     const info = schedule(item);
     return (
       <Card style={s.card}>
@@ -166,19 +187,18 @@ export default function Tutor() {
                 variant="outline"
                 onPress={() => router.push("/tutor/recurring-create")}
               />
-              <AppButton
-                label="Manage recurring classes"
-                variant="outline"
-                onPress={() => router.push("/tutor/recurring")}
-              />
             </View>
             <Text style={s.section}>My classes</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.filters} accessibilityRole="radiogroup">{classTypeFilters.map(filter => <Pressable key={filter.value} accessibilityRole="radio" accessibilityState={{ selected: classTypeFilter === filter.value }} onPress={() => setClassTypeFilter(filter.value)} style={[s.filter, classTypeFilter === filter.value && s.filterSelected]}><Text style={[s.filterText, classTypeFilter === filter.value && s.filterTextSelected]}>{filter.label}</Text></Pressable>)}</ScrollView>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.filters} accessibilityRole="radiogroup">{statusFilters.map(status => <Pressable key={status} accessibilityRole="radio" accessibilityState={{ selected: statusFilter === status }} onPress={() => setStatusFilter(status)} style={[s.filter, statusFilter === status && s.filterSelected]}><Text style={[s.filterText, statusFilter === status && s.filterTextSelected]}>{statusLabel(status)}</Text></Pressable>)}</ScrollView>
           </>
         }
-        data={items}
-        keyExtractor={(x) => x._id}
+        data={visibleItems}
+        keyExtractor={(x) => "kind" in x ? `series:${x.seriesId}` : x._id}
         renderItem={card}
-        ListEmptyComponent={<Text>No classes created yet.</Text>}
+        refreshing={loading && items.length > 0}
+        onRefresh={() => void load()}
+        ListEmptyComponent={loading ? <LoadingIndicator accessibilityLabel="Loading classes" /> : <Text accessibilityRole="alert" style={s.empty}>{emptyMessage(classTypeFilter, statusFilter)}</Text>}
       />
       <Modal
         transparent
@@ -268,6 +288,12 @@ const s = StyleSheet.create({
   quick: { gap: space.sm, marginBottom: space.xl },
   quickWide: { flexDirection: "row", alignItems: "center" },
   section: { ...type.section, color: colors.primary, marginBottom: space.sm },
+  filters: { gap: space.sm, paddingBottom: space.md, paddingRight: space.lg },
+  filter: { minHeight: 44, justifyContent: "center", paddingHorizontal: space.md, borderRadius: 22, backgroundColor: colors.elevatedSurface },
+  filterSelected: { backgroundColor: colors.primary },
+  filterText: { color: colors.text, fontWeight: "700" },
+  filterTextSelected: { color: "#fff" },
+  empty: { color: colors.textSecondary, textAlign: "center", padding: space.lg },
   card: { flex: 1, marginBottom: space.md, gap: space.sm },
   cardTop: {
     flexDirection: "row",
@@ -277,6 +303,10 @@ const s = StyleSheet.create({
   cardTitle: { flex: 1, gap: space.xs },
   title: { ...type.section, color: colors.primary },
   meta: { color: colors.textSecondary },
+  recurring: { flexDirection: "row", alignItems: "center", gap: space.xs },
+  repeat: { color: colors.primary, fontSize: 18, fontWeight: "700" },
+  recurringText: { color: colors.primary, fontWeight: "700" },
+  chevron: { color: colors.primary, fontSize: 32, lineHeight: 32 },
   more: {
     height: 40,
     width: 40,
